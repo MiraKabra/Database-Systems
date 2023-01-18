@@ -100,23 +100,16 @@ namespace PeterDB {
         if(pFile == nullptr) return -1;
 
         //check if the page exists
-        long int size = sizeOfFile(pFile);
-        int totalPagesExcludingHiddenPage = ceil(size / PAGE_SIZE) - 1;
-        //Compare by removing the hidden page
-        if(pageNum+1 > totalPagesExcludingHiddenPage) return -1;
+        int numPages = getNumberOfPages();
+        if(pageNum > numPages) return -1;
 
-        //The page may not be completely full. In that case,
-        //calculate the actual size of data to be read
-        int size_of_data = 0;
-        if((pageNum + 1)*PAGE_SIZE > size){
-            size_of_data = size - pageNum*PAGE_SIZE;
-        }else{
-            size_of_data = PAGE_SIZE;
-        }
+        //The page may not be completely full. That case is not handled.
+        //Here loading the entire page into memory
+
         //Set position to the start of the pageNum
         fseek(pFile, pageNum*PAGE_SIZE, SEEK_SET);
         //read page
-        size_t result = fread(data, size_of_data, 1, pFile);
+        size_t result = fread(data, PAGE_SIZE, 1, pFile);
         //Increase readPageCount
         readPageCounter++;
         return 0;
@@ -129,27 +122,78 @@ namespace PeterDB {
         if(pFile == nullptr) return -1;
 
         //check if the page exists
-        long int size = sizeOfFile(pFile);
-        int totalPagesExcludingHiddenPage = ceil(size / PAGE_SIZE) - 1;
-        //Compare by removing the hidden page
-        if(pageNum+1 > totalPagesExcludingHiddenPage) return -1;
+        int numPages = getNumberOfPages();
+        if(pageNum > numPages) return -1;
+        /* write the data from start of the page.
+         * Calculate start Address.
+         * Add 1 due to hidden page*/
+        long int offset = (numPages + 1)*PAGE_SIZE;
+        fseek(pFile, offset, SEEK_SET);
+        fwrite(data, sizeof(data), 1, pFile);
 
-        //The page may have some data. In that case, calculate the position from
-        // which to start
-
-        return -1;
+        //Increase write page counter
+        writePageCounter++;
+        return 0;
     }
 
     RC FileHandle::appendPage(const void *data) {
+        FILE* pFile = this->getFile();
+
+        //check if the file exists
+        if(pFile == nullptr) return -1;
+
+        //check if file is empty i.e. appending for the first time
+        int numPages = getNumberOfPages();
+        /*If appending for the first time, then add a hidden page also.
+         * and then add a next page with the data.
+         * If not appending for the first time, then first get the number of pages
+         * already there to calculate inserting address of the data*/
+        if(numPages == 0){
+            //First page is as hidden page. Write after that
+            fseek(pFile, PAGE_SIZE, SEEK_SET);
+            fwrite(data, sizeof(data), 1, pFile);
+
+        }else{
+            // 1 is added to take hidden page in account
+            long int start_address = (numPages + 1)*PAGE_SIZE;
+            fseek(pFile, start_address, SEEK_SET);
+            fwrite(data, sizeof(data), 1, pFile);
+
+        }
+        //Increase append count
+        appendPageCounter++;
+        //Update the new 'number of pages' in hidden file
+        numPages++;
+        fseek(pFile, 0, SEEK_SET);
+        fwrite(&numPages, 4, 1, pFile);
+
+        //If appending for the first time, then add a hidden page also
         return -1;
     }
 
     unsigned FileHandle::getNumberOfPages() {
-        return -1;
+        FILE* pFile = this->getFile();
+        fseek(pFile, 0, SEEK_END);
+        long int size_of_file = ftell(pFile);
+        //No hidden page case
+        if(size_of_file == 0) return 0;
+        //If code has come till here, it means number of pages are more than zero
+        //So, the first page is a hidden page
+        //come to beginning of file
+        fseek(pFile, 0, SEEK_SET);
+        //read first four bytes where number of page value exists
+        int numOfPages;
+
+        fread(&numOfPages, 4, 1, pFile);
+
+        return numOfPages;
     }
 
     RC FileHandle::collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount) {
-        return -1;
+        readPageCount = readPageCounter;
+        writePageCount = writePageCounter;
+        appendPageCount = appendPageCounter;
+        return 0;
     }
 
     //Return size of the file
