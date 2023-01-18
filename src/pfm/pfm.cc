@@ -19,16 +19,24 @@ namespace PeterDB {
     RC PagedFileManager::createFile(const std::string &fileName) {
 
         FILE* pFile;
+        pFile = fopen(fileName.c_str(), "r");
 
-        pFile = fopen(fileName.c_str(), "a");
-        if(pFile == nullptr){
+        //If file does not exist, it should have returned null when trying to
+        //open in read mode. Not null means file existed, hence throw an error
+        if(pFile != nullptr){
+            cout << "File already existed";
             return -1;
         }
+
+        //Finally file does not exist, do open a file in write mode to create it
+        //Then close the file
+        pFile = fopen(fileName.c_str(), "w");
         fclose(pFile);
         return 0;
     }
 
     RC PagedFileManager::destroyFile(const std::string &fileName) {
+
         int return_val = remove(fileName.c_str());
         //if not successful, the return_val wil be nonzero
         return return_val;
@@ -40,7 +48,7 @@ namespace PeterDB {
 
         FILE* pFile;
         pFile = fopen(fileName.c_str(), "r");
-        // If the file could not be opened, raise error
+        // This file does not exist
         if(pFile == nullptr){
             return -1;
         }
@@ -55,11 +63,13 @@ namespace PeterDB {
 
         //Flush the file data to disk
         FILE* pFile = fileHandle.getFile();
-        //This should not be needed as it should be flushed when the file is closed
-        fflush(pFile);
+
         //close the file
-        fclose(pFile);
+        //date will be flushed to disk automatically when file is closed
+        int return_val = fclose(pFile);
         //After closing the file, set it to null in the fileHandle
+        //If not closed properly, EOF(-1) is returned
+        if(return_val != 0) return return_val;
         fileHandle.setFile(nullptr);
         return 0;
     }
