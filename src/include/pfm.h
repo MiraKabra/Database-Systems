@@ -50,8 +50,10 @@ namespace PeterDB {
         long int sizeOfFile(FILE* pFile);
         RC setCountersFromFile();
         RC saveCountersToFile();
+        RC createHiddenPage(FILE* file);
+        RC updateCounterValue(int offset, int val, FILE* file);
     private:
-        FILE* file;
+        FILE* file = nullptr;
     };
 
 } // namespace PeterDB

@@ -19,18 +19,17 @@ namespace PeterDB {
     RC PagedFileManager::createFile(const std::string &fileName) {
 
         FILE* pFile;
-        pFile = fopen(fileName.c_str(), "r");
+        pFile = fopen(fileName.c_str(), "rb+");
 
         //If file does not exist, it should have returned null when trying to
         //open in read mode. Not null means file existed, hence throw an error
         if(pFile != nullptr){
-            cout << "File already existed";
             return -1;
         }
 
         //Finally file does not exist, do open a file in write mode to create it
         //Then close the file
-        pFile = fopen(fileName.c_str(), "w");
+        pFile = fopen(fileName.c_str(), "wb");
         fclose(pFile);
         return 0;
     }
@@ -47,11 +46,13 @@ namespace PeterDB {
         if(fileHandle.getFile() != nullptr) return -1;
 
         FILE* pFile;
-        pFile = fopen(fileName.c_str(), "r");
+        pFile = fopen(fileName.c_str(), "rb");
         // This file does not exist
         if(pFile == nullptr){
             return -1;
         }
+        fclose(pFile);
+        pFile = fopen(fileName.c_str(), "wb");
         //Assign the file to fileHandle. File is in Open state now and in read mode
         fileHandle.setFile(pFile);
         //Set the counter values
@@ -66,7 +67,7 @@ namespace PeterDB {
         //Flush the file data to disk
         FILE* pFile = fileHandle.getFile();
         //save the counters
-        fileHandle.saveCountersToFile();
+        //fileHandle.saveCountersToFile();
         //close the file
         //date will be flushed to disk automatically when file is closed
         int return_val = fclose(pFile);
@@ -92,26 +93,29 @@ namespace PeterDB {
         fseek(pFile, 4, SEEK_SET);
         fread(&readPageCounter,4, 1, pFile);
 
-        //The position should have been moved already. But verify once
+        fseek(pFile, 8, SEEK_SET);
         fread(&writePageCounter, 4, 1, pFile);
 
+        fseek(pFile, 12, SEEK_SET);
         fread(&appendPageCounter, 4, 1, pFile);
         return 0;
     }
 
-    RC FileHandle::saveCountersToFile(){
-        FILE* pFile = this->getFile();
-        fseek(pFile, 4, SEEK_SET);
-        fwrite(&readPageCounter, 4, 1, pFile);
-        fwrite(&writePageCounter, 4, 1, pFile);
-        fwrite(&appendPageCounter, 4, 1, pFile);
-        return 0;
-    }
+//    RC FileHandle::saveCountersToFile(){
+//        FILE* pFile = this->getFile();
+//        fseek(pFile, 4, SEEK_SET);
+//        fwrite(&readPageCounter, 4, 1, pFile);
+//        fseek(pFile, 8, SEEK_SET);
+//        fwrite(&writePageCounter, 4, 1, pFile);
+//        fseek(pFile, 12, SEEK_SET);
+//        fwrite(&appendPageCounter, 4, 1, pFile);
+//        return 0;
+//    }
     FileHandle::~FileHandle() = default;
 
     //Getter function for associated file
     FILE* FileHandle::getFile(){
-        return file;
+        return this->file;
     }
     //Setter function for associated file
     void FileHandle::setFile(FILE* file){
@@ -136,9 +140,10 @@ namespace PeterDB {
         //Set position to the start of the pageNum
         fseek(pFile, pageNum*PAGE_SIZE, SEEK_SET);
         //read page
-        size_t result = fread(data, PAGE_SIZE, 1, pFile);
+        size_t result = fread(data, 1, PAGE_SIZE, pFile);
         //Increase readPageCount
         readPageCounter++;
+        updateCounterValue(4, readPageCounter, file);
         return 0;
     }
 
@@ -156,10 +161,11 @@ namespace PeterDB {
          * Add 1 due to hidden page*/
         long int offset = (numPages + 1)*PAGE_SIZE;
         fseek(pFile, offset, SEEK_SET);
-        fwrite(data, sizeof(data), 1, pFile);
-
+        fwrite(data, 1, PAGE_SIZE, pFile);
+        fflush(file);
         //Increase write page counter
         writePageCounter++;
+        updateCounterValue(8, writePageCounter, file);
         return 0;
     }
 
@@ -177,25 +183,29 @@ namespace PeterDB {
          * already there to calculate inserting address of the data*/
         if(numPages == 0){
             //First page is as hidden page. Write after that
-            fseek(pFile, PAGE_SIZE, SEEK_SET);
-            fwrite(data, sizeof(data), 1, pFile);
-
+            createHiddenPage(pFile);
+            //int arr[1];
+            //int val = fwrite(arr, sizeof(arr), 1, pFile);
+            fwrite(data, sizeof(char) , PAGE_SIZE, pFile);
+            getNumberOfPages();
         }else{
             // 1 is added to take hidden page in account
             long int start_address = (numPages + 1)*PAGE_SIZE;
             fseek(pFile, start_address, SEEK_SET);
-            fwrite(data, sizeof(data), 1, pFile);
+            fwrite(data, sizeof(char) , PAGE_SIZE, pFile);
 
         }
+        fflush(pFile);
         //Increase append count
         appendPageCounter++;
+        updateCounterValue(12, appendPageCounter, pFile);
         //Update the new 'number of pages' in hidden file
         numPages++;
-        fseek(pFile, 0, SEEK_SET);
-        fwrite(&numPages, 4, 1, pFile);
-
+        updateCounterValue(0, numPages, pFile);
         //If appending for the first time, then add a hidden page also
-        return -1;
+
+
+        return 0;
     }
 
     unsigned FileHandle::getNumberOfPages() {
@@ -220,6 +230,25 @@ namespace PeterDB {
         readPageCount = readPageCounter;
         writePageCount = writePageCounter;
         appendPageCount = appendPageCounter;
+
+        int fromFileNumPages = 0;
+        int fromFileReadCounter = 0;
+        int fromFileWriteCounter = 0;
+        int fromFileAppendCounter = 0;
+        FILE* pFile = this->getFile();
+
+        fseek(pFile, 0, SEEK_SET);
+        fread(&fromFileNumPages,4, 1, pFile);
+
+        fseek(pFile, 4, SEEK_SET);
+        fread(&fromFileReadCounter,4, 1, pFile);
+
+        fseek(pFile, 8, SEEK_SET);
+        fread(&fromFileWriteCounter, 4, 1, pFile);
+
+        fseek(pFile, 12, SEEK_SET);
+        fread(&fromFileAppendCounter, 4, 1, pFile);
+
         return 0;
     }
 
@@ -232,4 +261,35 @@ namespace PeterDB {
         return size;
     }
 
+    RC FileHandle::createHiddenPage(FILE* file){
+
+        void *insert = malloc(PAGE_SIZE);
+        /*
+         * Set NumPages at first 4 bytes
+         * Set ReadCounter at next 4 bytes
+         * Set WriteCounter at next 4 bytes
+         * Set AppendCounter at next 4 bytes*/
+        int arrayOfCounters[] = {0,0,0,0};
+        memcpy(insert, arrayOfCounters, 4*sizeof(unsigned int));
+        fseek(file, 0, SEEK_SET);
+        fwrite(insert, 1, PAGE_SIZE, file);
+        fflush(file);
+        free(insert);
+        return 0;
+    }
+
+    RC FileHandle::updateCounterValue(int offset, int counter, FILE* file){
+        fseek(file, offset, SEEK_SET);
+        size_t result = fwrite(&counter, sizeof(unsigned int), 1, file);
+
+        if(result != 1){
+            perror("Updating Counter Failed");
+            return -1;
+        }
+        if(fflush(file) != 0){
+            perror("Can't flush file");
+            return -1;
+        }
+        return 0;
+    }
 } // namespace PeterDB
