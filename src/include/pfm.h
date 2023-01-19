@@ -48,6 +48,8 @@ namespace PeterDB {
         FILE* getFile();
         void setFile(FILE* file);
         long int sizeOfFile(FILE* pFile);
+        RC setCountersFromFile();
+        RC saveCountersToFile();
     private:
         FILE* file;
     };

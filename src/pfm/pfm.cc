@@ -54,6 +54,8 @@ namespace PeterDB {
         }
         //Assign the file to fileHandle. File is in Open state now and in read mode
         fileHandle.setFile(pFile);
+        //Set the counter values
+        fileHandle.setCountersFromFile();
         return 0;
     }
 
@@ -63,7 +65,8 @@ namespace PeterDB {
 
         //Flush the file data to disk
         FILE* pFile = fileHandle.getFile();
-
+        //save the counters
+        fileHandle.saveCountersToFile();
         //close the file
         //date will be flushed to disk automatically when file is closed
         int return_val = fclose(pFile);
@@ -79,7 +82,31 @@ namespace PeterDB {
         writePageCounter = 0;
         appendPageCounter = 0;
     }
+    RC FileHandle::setCountersFromFile(){
+        FILE* pFile = this->getFile();
 
+        //First 4 byte is numPages
+        //Next 4 bytes is readCounter
+        //Next 4 bytes is writeCounter
+        //Next 4 bytes is appendCounter
+        fseek(pFile, 4, SEEK_SET);
+        fread(&readPageCounter,4, 1, pFile);
+
+        //The position should have been moved already. But verify once
+        fread(&writePageCounter, 4, 1, pFile);
+
+        fread(&appendPageCounter, 4, 1, pFile);
+        return 0;
+    }
+
+    RC FileHandle::saveCountersToFile(){
+        FILE* pFile = this->getFile();
+        fseek(pFile, 4, SEEK_SET);
+        fwrite(&readPageCounter, 4, 1, pFile);
+        fwrite(&writePageCounter, 4, 1, pFile);
+        fwrite(&appendPageCounter, 4, 1, pFile);
+        return 0;
+    }
     FileHandle::~FileHandle() = default;
 
     //Getter function for associated file
