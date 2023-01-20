@@ -67,10 +67,9 @@ namespace PeterDB {
 
         //Flush the file data to disk
         FILE* pFile = fileHandle.getFile();
-        //save the counters
-        //fileHandle.saveCountersToFile();
+
         //close the file
-        //date will be flushed to disk automatically when file is closed
+        //data will be flushed to disk automatically when file is closed
         int return_val = fclose(pFile);
         //After closing the file, set it to null in the fileHandle
         //If not closed properly, EOF(-1) is returned
@@ -102,16 +101,6 @@ namespace PeterDB {
         return 0;
     }
 
-//    RC FileHandle::saveCountersToFile(){
-//        FILE* pFile = this->getFile();
-//        fseek(pFile, 4, SEEK_SET);
-//        fwrite(&readPageCounter, 4, 1, pFile);
-//        fseek(pFile, 8, SEEK_SET);
-//        fwrite(&writePageCounter, 4, 1, pFile);
-//        fseek(pFile, 12, SEEK_SET);
-//        fwrite(&appendPageCounter, 4, 1, pFile);
-//        return 0;
-//    }
     FileHandle::~FileHandle() = default;
 
     //Getter function for associated file
@@ -232,25 +221,6 @@ namespace PeterDB {
         readPageCount = readPageCounter;
         writePageCount = writePageCounter;
         appendPageCount = appendPageCounter;
-
-        int fromFileNumPages = 0;
-        int fromFileReadCounter = 0;
-        int fromFileWriteCounter = 0;
-        int fromFileAppendCounter = 0;
-        FILE* pFile = this->getFile();
-
-        fseek(pFile, 0, SEEK_SET);
-        fread(&fromFileNumPages,4, 1, pFile);
-
-        fseek(pFile, 4, SEEK_SET);
-        fread(&fromFileReadCounter,4, 1, pFile);
-
-        fseek(pFile, 8, SEEK_SET);
-        fread(&fromFileWriteCounter, 4, 1, pFile);
-
-        fseek(pFile, 12, SEEK_SET);
-        fread(&fromFileAppendCounter, 4, 1, pFile);
-
         return 0;
     }
 
