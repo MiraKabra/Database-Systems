@@ -133,6 +133,12 @@ namespace PeterDB {
                 const std::vector<std::string> &attributeNames, // a list of projected attributes
                 RBFM_ScanIterator &rbfm_ScanIterator);
 
+        RC encoder(const std::vector<Attribute> &recordDescriptor, const void *data, const void *encoded_data);
+
+    private:
+        bool isColValueNull(const void *data, int k);
+        int calculateRecordSize(int N, const std::vector<Attribute> &recordDescriptor, const void *data, std::vector<bool> &nullIndicator);
+
     protected:
         RecordBasedFileManager();                                                   // Prevent construction
         ~RecordBasedFileManager();                                                  // Prevent unwanted destruction
