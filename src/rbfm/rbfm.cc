@@ -44,8 +44,7 @@ namespace PeterDB {
         return -1;
     }
 
-
-    RC RecordBasedFileManager::encoder(const std::vector<Attribute> &recordDescriptor, const void *data, const void *encoded_data){
+    void* RecordBasedFileManager::encoder(const std::vector<Attribute> &recordDescriptor, const void *data){
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil(numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
 
@@ -61,20 +60,82 @@ namespace PeterDB {
 
         int recordSize = calculateRecordSize(N, recordDescriptor, data,nullIndicator);
         void *record = malloc(recordSize);
-
+        //Fill memory with zero
+        memset(record, 0, recordSize);
+        copyInputToRecord(record, data, recordDescriptor, nullIndicator, N);
+        return record;
     }
 
-    RC copyInputToRecord(){
+    RC RecordBasedFileManager::copyInputToRecord(void* record, const void *data, const std::vector<Attribute> &recordDescriptor, const std::vector<bool> &nullIndicator, int N){
+        int numberOfCols = recordDescriptor.size();
+        int bitMapSize = ceil(numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
+        char* pointer = (char *)data;
+        int offset = 0;
+        //Fill first 4 byte with value of N
+        memcpy((char * )record+offset, &N, sizeof(unsigned));
+        //Increase offset on record by 4 B
+        offset += sizeof(unsigned);
 
+        //Fill the next bitMapSize*sizeof(char) bytes with bitmap
+        memcpy((char *)record + offset, pointer, bitMapSize*sizeof(char));
+
+        offset += sizeof(unsigned );
+        //Increase pointer to next byte in the *data
+        pointer = pointer + bitMapSize;
+
+        //st, st + 4 (bitmap), N1, N2, N3, st + (1+N)*4, st +
+        /*
+         * First data insertion address is calculated as:
+         * start address of record + 4 bytes for  N + 4 bytes for bitmap
+         * + (N*4) bytes for mini folder of pointers*/
+        int dataInsertionOffsetFromStartOfRecord = (2 + N)*4;
+        for(int k = 0; k < numberOfCols; k++){
+            bool isNull = nullIndicator.at(k);
+            if(isNull) continue;
+            Attribute attr = recordDescriptor.at(k);
+            if(attr.type == TypeVarChar){
+                int len = *(int *)pointer; //Next 4 byte gives length
+                //The length info was stored in 4 byte. So, increase the pointer by 4 bytes
+                //After this pointer points to value of varchar
+                pointer = pointer + 4;
+                /*
+                 * This is not absolute, but offset. eg. if in the file, startAddressOfrecord
+                 * is 2000 B, then (2000 + end_address) is where the field ends
+                 * Suppose N = 3.
+                 * First 4 byte in record stores N
+                 * Next 4 byte in record stores bitmap = 000...
+                 * Next N*4 bytes store pointers to end address
+                 * So, if first col is varchar of length 3, end_address = 20 + 3 -1 = 22
+                 */
+                int end_address = dataInsertionOffsetFromStartOfRecord + len - 1;
+
+                memcpy((char *)record + offset, &end_address, sizeof(unsigned));
+
+                offset += sizeof(unsigned);
+                //Insert the data at dataInsertionOffsetFromStartOfRecord
+                memcpy((char *)record +  dataInsertionOffsetFromStartOfRecord, pointer, len);
+                dataInsertionOffsetFromStartOfRecord += len;
+                pointer += len;
+            }else{
+                //Pointer points to 4 byte of either int or real type
+                int end_address = dataInsertionOffsetFromStartOfRecord + sizeof(unsigned) - 1;
+                memcpy((char *)record + offset, &end_address, sizeof(unsigned ));
+                offset += sizeof(unsigned);
+                //Insert the data at dataInsertionOffsetFromStartOfRecord
+                memcpy((char *)record +  dataInsertionOffsetFromStartOfRecord, pointer, sizeof(unsigned ));
+                dataInsertionOffsetFromStartOfRecord += sizeof(unsigned);
+                pointer += sizeof(unsigned);
+            }
+        }
     }
 
-    int RecordBasedFileManager::calculateRecordSize(int N, const std::vector<Attribute> &recordDescriptor, const void *data, std::vector<bool> &nullIndicator){
+    int RecordBasedFileManager::calculateRecordSize(int N, const std::vector<Attribute> &recordDescriptor, const void *data, const std::vector<bool> &nullIndicator){
 
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil(numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
 
-        int recordSize = 4 * (N+1); // N*4 = size of Mini directory, 4 byte for bitmap
-        char* pointer = (char *)data + bitMapSize;
+        int recordSize = 4 * (N+2); // 4 byte for N, 4 byte for bitmap, N*4 = size of Mini directory,
+        char* pointer = (char *)data + bitMapSize * sizeof(char);
 
         for(int k = 0; k < numberOfCols; k++){
             bool isNull = nullIndicator.at(k);
