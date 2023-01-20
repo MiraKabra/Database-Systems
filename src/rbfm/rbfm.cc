@@ -39,10 +39,29 @@ namespace PeterDB {
         return return_val;
     }
 
+
     RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const void *data, RID &rid) {
+        void * record = encoder(recordDescriptor, data);
+        int pageNums = fileHandle.getNumberOfPages();
+        //Page num in which data finally got inserted
+        int insertPageNum;
+        /*
+         * If pageNums is zero, then this is the first record and
+         * we need to append a page*/
+
+        if(pageNums == 0){
+            fileHandle.appendPage(record);
+            insertPageNum = 0;
+            //Add F: free space
+            //Add N: Number of record
+            //Add recordsize and start_address slot
+        }
+
         return -1;
     }
+
+
 
     void* RecordBasedFileManager::encoder(const std::vector<Attribute> &recordDescriptor, const void *data){
         int numberOfCols = recordDescriptor.size();
@@ -127,6 +146,7 @@ namespace PeterDB {
                 pointer += sizeof(unsigned);
             }
         }
+        return 0;
     }
 
     int RecordBasedFileManager::calculateRecordSize(int N, const std::vector<Attribute> &recordDescriptor, const void *data, const std::vector<bool> &nullIndicator){
@@ -176,6 +196,113 @@ namespace PeterDB {
                                           const RID &rid, void *data) {
         return -1;
     }
+
+    void* RecordBasedFileManager::decoder(const std::vector<Attribute> &recordDescriptor, void* record){
+
+        int numberOfCols = recordDescriptor.size();
+        int bitMapSize = ceil(numberOfCols/8);
+        //Get the number of nonnull value from first four bytes
+        int N = *(int *) record;
+        std::vector<bool> nullIndicator;
+        int bitMap = 0;
+        //The next 4 bytes after N contains bitMap
+        memcpy(&bitMap, (int*) record + 1, sizeof(unsigned));
+
+        for(int k = 0; k < numberOfCols; k++){
+            bool isNull = isColValueNull(&bitMap, k);
+            nullIndicator.push_back(isNull);
+        }
+        int sizeOfData = calculateDataSize(recordDescriptor, record, nullIndicator);
+        //Assign memory for data
+        void* data = malloc(sizeOfData);
+        //Fill the memory with zeros
+        memset(data, 0, sizeOfData);
+        copyRecordToData(recordDescriptor, data, record, nullIndicator);
+        return data;
+    }
+
+    RC RecordBasedFileManager::copyRecordToData(const std::vector<Attribute> &recordDescriptor, void* data, void* record, const std::vector<bool> &nullIndicator){
+        int numberOfCols = recordDescriptor.size();
+        int bitMapSize = ceil(numberOfCols/8);
+        //Get the number of nonnull value from first four bytes
+        int N = *(int *) record;
+        //Set offset to start of bitMap
+        int recordOffset = sizeof(unsigned);
+        //Copy bitMap
+        int dataOffset = 0;
+        //Copy the bitmap of bitMapSize
+        memcpy((char*) data + dataOffset, (char*) record + recordOffset, bitMapSize);
+
+        //Increase record offset to next 4 byte
+        recordOffset += sizeof(unsigned);
+        //Increase dataOffset to end of bitMap
+        dataOffset += bitMapSize;
+        int dataInsertionOffsetFromStartOfRecord = (2 + N)*4;
+        for(int k = 0; k < nullIndicator.size(); k++){
+            bool isNull = nullIndicator.at(k);
+            if(isNull) continue;
+            Attribute attr = recordDescriptor.at(k);
+            if(attr.type == TypeVarChar){
+                int end_address_offset = *((int *) record + recordOffset);
+                int len = end_address_offset - dataInsertionOffsetFromStartOfRecord + 1;
+                //Save the length in the 4 bytes of data
+                memcpy((char *) data + dataOffset, &len, sizeof(unsigned));
+                //Increase dataOffset by 4 bytes
+                dataOffset += sizeof(unsigned);
+                //copy
+                memcpy((char *)data + dataOffset, (char *) record + dataInsertionOffsetFromStartOfRecord, len);
+                //Increase dataInsertionOffset by length of varchar
+                dataInsertionOffsetFromStartOfRecord += len;
+                dataOffset += len;
+
+            }else{
+                //No need to store size info for int and real type
+                memcpy((char *)data + dataOffset, (char *)record + dataInsertionOffsetFromStartOfRecord, sizeof(unsigned));
+                dataOffset += sizeof(unsigned);
+                dataInsertionOffsetFromStartOfRecord += sizeof(unsigned);
+            }
+            recordOffset += sizeof(unsigned);
+        }
+        return 0;
+    }
+    int RecordBasedFileManager::calculateDataSize(const std::vector<Attribute> &recordDescriptor, void* record, const std::vector<bool> &nullIndicator){
+        int sizeOfData = 0;
+        int numberOfCols = recordDescriptor.size();
+        int bitMapSize = ceil(numberOfCols/8);
+
+        sizeOfData += bitMapSize;
+        //Get the number of nonnull value from first four bytes
+        int N = *(int *) record;
+
+        //offset to the first box of mini directory
+        int offset = 2 * sizeof(unsigned);
+        int dataInsertionOffsetFromStartOfRecord = (2 + N)*4;
+        for(int k = 0; k < numberOfCols; k++){
+            bool isNull = nullIndicator.at(k);
+            if(isNull) continue;
+            Attribute attr = recordDescriptor.at(k);
+            if(attr.type == TypeVarChar){
+                //append length size to data size
+                int end_address_offset = *((int *) record + offset);
+                int len = end_address_offset - dataInsertionOffsetFromStartOfRecord + 1;
+                sizeOfData = sizeOfData + len;
+                //append 4 byte for storing this length size in data
+                sizeOfData += sizeof(unsigned);
+                //Increase dataInsertionOffsetFromStartOfRecord offset by length of varchar
+                dataInsertionOffsetFromStartOfRecord += len;
+            }else{
+                //For int and real type, only value will be added in the
+                //data and no length information. So, just add 4 [size of value]
+                sizeOfData += sizeof(unsigned);
+                //Increase dataInsertionOffsetFromStartOfRecord offset by length of 4
+                dataInsertionOffsetFromStartOfRecord += sizeof(unsigned);
+            }
+            //Increase offset by 4 bytes
+            offset += sizeof(unsigned);
+        }
+        return sizeOfData;
+    }
+
 
     RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const RID &rid) {
