@@ -52,7 +52,8 @@ namespace PeterDB {
             return -1;
         }
         fclose(pFile);
-        pFile = fopen(fileName.c_str(), "wb");
+        //Both read and write
+        pFile = fopen(fileName.c_str(), "rb+");
         //Assign the file to fileHandle. File is in Open state now and in read mode
         fileHandle.setFile(pFile);
         //Set the counter values
@@ -132,13 +133,14 @@ namespace PeterDB {
 
         //check if the page exists
         int numPages = getNumberOfPages();
-        if(pageNum > numPages) return -1;
+        if(pageNum >= numPages) return -1;
 
         //The page may not be completely full. That case is not handled.
         //Here loading the entire page into memory
 
         //Set position to the start of the pageNum
-        fseek(pFile, pageNum*PAGE_SIZE, SEEK_SET);
+        int offset = (pageNum + 1)*PAGE_SIZE; // Considering there is a hidden page
+        fseek(pFile, offset, SEEK_SET);
         //read page
         size_t result = fread(data, 1, PAGE_SIZE, pFile);
         //Increase readPageCount
@@ -155,11 +157,11 @@ namespace PeterDB {
 
         //check if the page exists
         int numPages = getNumberOfPages();
-        if(pageNum > numPages) return -1;
+        if(pageNum >= numPages) return -1;
         /* write the data from start of the page.
          * Calculate start Address.
          * Add 1 due to hidden page*/
-        long int offset = (numPages + 1)*PAGE_SIZE;
+        long int offset = (pageNum + 1)*PAGE_SIZE;
         fseek(pFile, offset, SEEK_SET);
         fwrite(data, 1, PAGE_SIZE, pFile);
         fflush(file);
@@ -186,8 +188,8 @@ namespace PeterDB {
             createHiddenPage(pFile);
             //int arr[1];
             //int val = fwrite(arr, sizeof(arr), 1, pFile);
+            fseek(pFile, PAGE_SIZE, SEEK_SET);
             fwrite(data, sizeof(char) , PAGE_SIZE, pFile);
-            getNumberOfPages();
         }else{
             // 1 is added to take hidden page in account
             long int start_address = (numPages + 1)*PAGE_SIZE;
@@ -221,7 +223,7 @@ namespace PeterDB {
         //read first four bytes where number of page value exists
         int numOfPages;
 
-        fread(&numOfPages, 4, 1, pFile);
+        fread(&numOfPages, sizeof(unsigned int), 1, pFile);
 
         return numOfPages;
     }
