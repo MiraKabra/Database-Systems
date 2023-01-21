@@ -98,8 +98,7 @@ namespace PeterDB {
                         RID &rid);
 
         // Read a record identified by the given rid.
-        RC
-        readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid, void *&data);
+        RC readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid, void *data);
 
         // Print the record that is passed to this utility method.
         // This method will be mainly used for debugging/testing.
@@ -141,7 +140,7 @@ namespace PeterDB {
         RC copyInputToRecord(void* record, const void *data, const std::vector<Attribute> &recordDescriptor, const std::vector<bool> &nullIndicator, int N);
         int calculateDataSize(const std::vector<Attribute> &recordDescriptor, void* record, const std::vector<bool> &nullIndicator);
         RC copyRecordToData(const std::vector<Attribute> &recordDescriptor, void* data, void* record, const std::vector<bool> &nullIndicator);
-        void* decoder(const std::vector<Attribute> &recordDescriptor, void* record);
+        void* decoder(const std::vector<Attribute> &recordDescriptor, void* record, void* data);
         int insertDataNewPage(FileHandle &fileHandle, int recordSize, void* record);
         int findFreePageIndex(FileHandle &fileHandle, int recordSize);
         int insertDataByPageIndex(FileHandle &fileHandle, int pageIndex, void* record, int recordSize);
@@ -150,7 +149,6 @@ namespace PeterDB {
         ~RecordBasedFileManager();                                                  // Prevent unwanted destruction
         RecordBasedFileManager(const RecordBasedFileManager &);                     // Prevent construction by copying
         RecordBasedFileManager &operator=(const RecordBasedFileManager &);          // Prevent assignment
-
     };
 
 } // namespace PeterDB

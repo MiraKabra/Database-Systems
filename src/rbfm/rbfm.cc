@@ -311,7 +311,7 @@ namespace PeterDB {
 
 
     RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
-                                          const RID &rid, void *&data) {
+                                          const RID &rid, void *data) {
         int pageIndex = rid.pageNum;
         int slotNum = rid.slotNum;
         char* page = (char*)malloc(PAGE_SIZE);
@@ -326,13 +326,13 @@ namespace PeterDB {
         memcpy(&lengthOfRecord, page + offsetForRecordLength, sizeof(unsigned ));
         void* record = malloc(lengthOfRecord);
         memcpy(record, page + startAddress, lengthOfRecord);
-        data = decoder(recordDescriptor, record);
+        decoder(recordDescriptor, record, data);
         free(record);
         free(page);
         return 0;
     }
 
-    void* RecordBasedFileManager::decoder(const std::vector<Attribute> &recordDescriptor, void* record){
+    void* RecordBasedFileManager::decoder(const std::vector<Attribute> &recordDescriptor, void* record, void *data){
 
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil((float)numberOfCols/8);
@@ -349,7 +349,7 @@ namespace PeterDB {
         }
         int sizeOfData = calculateDataSize(recordDescriptor, record, nullIndicator);
         //Assign memory for data
-        void* data = malloc(sizeOfData);
+//        void* data = malloc(sizeOfData);
         //Fill the memory with zeros
         memset(data, 0, sizeOfData);
         copyRecordToData(recordDescriptor, data, record, nullIndicator);
