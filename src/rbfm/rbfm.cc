@@ -443,7 +443,62 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::printRecord(const std::vector<Attribute> &recordDescriptor, const void *data,
                                            std::ostream &out) {
+        
+        int numberOfCols = recordDescriptor.size();
+        int bitMapSize = ceil(numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
+        char* pointer = (char *)data;
 
+        int N = 0;
+        std::vector<bool> nullIndicator;
+        for(int k = 0; k < numberOfCols; k++){
+            bool isNull = isColValueNull(data, k);
+            nullIndicator.push_back(isNull);
+            if(isNull) continue;
+            N++; //Increase N for non null value
+        }
+        pointer = pointer + bitMapSize;
+        std::string str = "";
+        //<AttributeName1>:\s<Value1>,\s<AttributeName2>:\s<Value2>,\s<AttributeName3>:\s<Value3>\n
+        for(int k = 0; k < numberOfCols; k++){
+            Attribute attr = recordDescriptor.at(k);
+            bool isNull = nullIndicator.at(k);
+            str.append(attr.name);
+            str.append(": ");
+            if(isNull){
+                str.append("NULL");
+                if(k != numberOfCols - 1){
+                    str.append(", ");
+                }
+                continue;
+            }
+            if(attr.type == TypeVarChar){
+                int len = *(int *)pointer; //Next 4 byte gives length
+                //The length info was stored in 4 byte. So, increase the pointer by 4 bytes
+                //After this pointer points to value of varchar
+                pointer = pointer + 4;
+                char array[len];
+                for(int i = 0; i < len; i++){
+                    array[i] = *pointer;
+                    pointer = pointer + 1; //Pointer got forwarded here
+                }
+                std::string val = array;
+                str.append(array);
+            }else if(attr.type == TypeInt){
+                int val = *(int*) pointer;
+                str.append(std::to_string(val));
+                pointer = pointer + 4;
+            }else{
+                float val = *(float*)pointer;
+                str.append(std::to_string(val));
+            }
+            if(k != numberOfCols - 1){
+                str.append(", ");
+                pointer = pointer + 4;
+            }
+            if(k == numberOfCols - 1){
+                str.append("\n");
+            }
+        }
 
         return 0;
     }
