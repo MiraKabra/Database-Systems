@@ -18,7 +18,8 @@
  - Next N fields of 4 byte each: Each of these will store the end address of the corresponding non-null value
  - Next N fields for each of the value. eg. for varchar of 8 bytes long, only 8 byte will be allocated for the varchar. For RealType and IntType, always 4 bytes will be indicated.
 
-![image info](./record format.png)
+![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-1/report/record%20format.png?raw=true)
+
 
 2. Describe how you store a null field.
 The bitmap in the data is used to see if any field is null or not. If a field is null, then the corresponding bit in the record bitmap is also set to 1 and no info for that column is stored in the record.
@@ -33,7 +34,7 @@ For getting any field, we need to access only the previous slot of mini director
 
 ### 3. Page Format
 - Show your page format design.
-  ![image info](./Page format.png)
+  ![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-1/report/Page%20format.png?raw=true)
 
 - Explain your slot directory design if applicable.
 
