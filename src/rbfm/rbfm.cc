@@ -182,7 +182,7 @@ namespace PeterDB {
 
     void* RecordBasedFileManager::encoder(const std::vector<Attribute> &recordDescriptor, const void *data, int& getRecordSize){
         int numberOfCols = recordDescriptor.size();
-        int bitMapSize = ceil(numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
+        int bitMapSize = ceil((float)numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
 
         unsigned char* pointer;
         int N = 0;
@@ -205,7 +205,7 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::copyInputToRecord(void* record, const void *data, const std::vector<Attribute> &recordDescriptor, const std::vector<bool> &nullIndicator, int N){
         int numberOfCols = recordDescriptor.size();
-        int bitMapSize = ceil(numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
+        int bitMapSize = ceil((float)numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
         char* pointer = (char *)data;
         int offset = 0;
         //Fill first 4 byte with value of N
@@ -270,7 +270,7 @@ namespace PeterDB {
     int RecordBasedFileManager::calculateRecordSize(int N, const std::vector<Attribute> &recordDescriptor, const void *data, const std::vector<bool> &nullIndicator){
 
         int numberOfCols = recordDescriptor.size();
-        int bitMapSize = ceil(numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
+        int bitMapSize = ceil((float)numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
 
         int recordSize = 4 * (N+2); // 4 byte for N, 4 byte for bitmap, N*4 = size of Mini directory,
         char* pointer = (char *)data + bitMapSize * sizeof(char);
@@ -333,7 +333,7 @@ namespace PeterDB {
     void* RecordBasedFileManager::decoder(const std::vector<Attribute> &recordDescriptor, void* record){
 
         int numberOfCols = recordDescriptor.size();
-        int bitMapSize = ceil(numberOfCols/8);
+        int bitMapSize = ceil((float)numberOfCols/8);
         //Get the number of nonnull value from first four bytes
         int N = *(int *) record;
         std::vector<bool> nullIndicator;
@@ -356,7 +356,7 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::copyRecordToData(const std::vector<Attribute> &recordDescriptor, void* data, void* record, const std::vector<bool> &nullIndicator){
         int numberOfCols = recordDescriptor.size();
-        int bitMapSize = ceil(numberOfCols/8);
+        int bitMapSize = ceil((float)numberOfCols/8);
         //Get the number of nonnull value from first four bytes
         int N = *(int *) record;
         //Set offset to start of bitMap
@@ -401,7 +401,7 @@ namespace PeterDB {
     int RecordBasedFileManager::calculateDataSize(const std::vector<Attribute> &recordDescriptor, void* record, const std::vector<bool> &nullIndicator){
         int sizeOfData = 0;
         int numberOfCols = recordDescriptor.size();
-        int bitMapSize = ceil(numberOfCols/8);
+        int bitMapSize = ceil((float)numberOfCols/8);
 
         sizeOfData += bitMapSize;
         //Get the number of nonnull value from first four bytes
@@ -445,7 +445,7 @@ namespace PeterDB {
     RC RecordBasedFileManager::printRecord(const std::vector<Attribute> &recordDescriptor, const void *data,
                                            std::ostream &out) {
         int numberOfCols = recordDescriptor.size();
-        int bitMapSize = ceil(numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
+        int bitMapSize = ceil((float)numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
         char* pointer = (char *)data;
 
         int N = 0;
@@ -457,6 +457,7 @@ namespace PeterDB {
             N++; //Increase N for non null value
         }
         pointer = pointer + bitMapSize;
+        int offset = bitMapSize;
         std::string str = "";
         //<AttributeName1>:\s<Value1>,\s<AttributeName2>:\s<Value2>,\s<AttributeName3>:\s<Value3>\n
         for(int k = 0; k < numberOfCols; k++){
@@ -464,42 +465,42 @@ namespace PeterDB {
             bool isNull = nullIndicator.at(k);
             str.append(attr.name);
             str.append(": ");
-            if(isNull){
+            if(isNull) {
                 str.append("NULL");
-                if(k != numberOfCols - 1){
-                    str.append(", ");
-                }
+                if(k < numberOfCols) str.append(", ");
                 continue;
             }
             if(attr.type == TypeVarChar){
                 int len = *(int *)pointer; //Next 4 byte gives length
                 //The length info was stored in 4 byte. So, increase the pointer by 4 bytes
                 //After this pointer points to value of varchar
-                pointer = pointer + 4;
+                pointer += sizeof(int);
+                offset += sizeof(int);
                 char array[len];
-                for(int i = 0; i < len; i++){
-                    array[i] = *pointer;
-                    pointer = pointer + 1; //Pointer got forwarded here
-                }
-                std::string val = array;
+                memcpy(array, pointer, len * sizeof(char));
+                pointer += len * sizeof(char);
+                offset += len * sizeof(char);
                 str.append(array);
-            }else if(attr.type == TypeInt){
-                int val = *(int*) pointer;
+            } else if(attr.type == TypeInt){
+//                int val = *(int*) pointer;
+                int val;
+                memcpy(&val, pointer, sizeof(int));
                 str.append(std::to_string(val));
-                pointer = pointer + 4;
-            }else{
-                float val = *(float*)pointer;
+                pointer += sizeof(int);
+                offset += sizeof(int);
+            } else {
+//                float val = *(float*)pointer;
+                float val;
+                memcpy(&val, pointer, sizeof(float));
                 str.append(std::to_string(val));
+                pointer += sizeof(float);
+                offset += sizeof(float);
             }
-            if(k != numberOfCols - 1){
-                str.append(", ");
-                pointer = pointer + 4;
-            }
-            if(k == numberOfCols - 1){
-                str.append("\n");
-            }
+            if(k < numberOfCols) str.append(", ");
+            else str.append("\n");
         }
-        out.write((char *)&str, sizeof(str));
+        out << str;
+//        out.write((char *)&str, sizeof(str));
         return 0;
     }
 
