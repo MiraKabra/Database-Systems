@@ -42,28 +42,144 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const void *data, RID &rid) {
-        void * record = encoder(recordDescriptor, data);
+        int recordSize = 0;
+        //It will store the size of the record in the recordSize variable
+        void * record = encoder(recordDescriptor, data, recordSize);
         int pageNums = fileHandle.getNumberOfPages();
         //Page num in which data finally got inserted
-        int insertPageNum;
+        int insertPageIndex = 0;
+        int insertSlotNum = 0;
         /*
          * If pageNums is zero, then this is the first record and
          * we need to append a page*/
 
         if(pageNums == 0){
-            fileHandle.appendPage(record);
-            insertPageNum = 0;
-            //Add F: free space
-            //Add N: Number of record
-            //Add recordsize and start_address slot
+            int newPageIndex = insertDataNewPage(fileHandle, recordSize, record);
+            insertPageIndex = newPageIndex;
+            insertSlotNum = 1;
+        }else{
+            int freePageIndex = findFreePageIndex(fileHandle, recordSize);
+            //No suitable  free space found, so append a new page
+            if(freePageIndex == -1){
+                int newPageIndex = insertDataNewPage(fileHandle, recordSize, record);
+                insertPageIndex = newPageIndex;
+                insertSlotNum = 1;
+            }else{
+                //insert data in the found page
+                insertSlotNum = insertDataByPageIndex(fileHandle, freePageIndex, record, recordSize);
+                insertPageIndex = freePageIndex;
+            }
         }
+        rid.slotNum = insertSlotNum;
+        rid.pageNum = insertPageIndex;
 
+        return 0;
+    }
+    //Returns slotNum where record was inserted
+    int RecordBasedFileManager::insertDataByPageIndex(FileHandle &fileHandle, int pageIndex, void* record, int recordSize){
+
+        char* page =(char *) malloc(PAGE_SIZE);
+        fileHandle.readPage(pageIndex, page);
+        int start_address_of_slotNum = PAGE_SIZE - 2*sizeof(unsigned);
+        //Get Number of slots
+        int numOfSlots = 0;
+        memcpy(&numOfSlots, page + start_address_of_slotNum, sizeof(unsigned ));
+
+        //from numOfSlots, we need to get the start address and length of the last record
+        int totalLengthOfMetadata = (2 + 2*numOfSlots)*sizeof(unsigned); // 1 for F, 1 for N, 2 for each record
+        int startAddressOfLastRecord = 0;
+        int lengthOfLastRecord = 0;
+        memcpy(&startAddressOfLastRecord, page + PAGE_SIZE - totalLengthOfMetadata, sizeof(unsigned ));
+        memcpy(&lengthOfLastRecord, page + PAGE_SIZE - totalLengthOfMetadata + 4, sizeof(unsigned ) );
+
+        int insertAddressForRecord = startAddressOfLastRecord + lengthOfLastRecord;
+        memcpy(page + insertAddressForRecord, record, recordSize);
+        /*Add slot info*/
+        //Add length info
+        memcpy(page + PAGE_SIZE - totalLengthOfMetadata - sizeof(unsigned), &recordSize, sizeof(unsigned));
+        //Add startAddress
+        memcpy(page + PAGE_SIZE - totalLengthOfMetadata - 2*sizeof(unsigned), &insertAddressForRecord, sizeof(unsigned ));
+        //Update NumSlots
+        numOfSlots++;
+        memcpy(page + PAGE_SIZE - 2*sizeof(unsigned ), &numOfSlots, sizeof(unsigned) );
+
+        /*Update free space*/
+        //First get the freeSpace val
+        int start_address_of_freeSpace = PAGE_SIZE - sizeof(unsigned);
+        int freeSpace = 0;
+        memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
+        freeSpace = freeSpace - 2*sizeof(unsigned ) - recordSize;
+        memcpy(page + start_address_of_freeSpace, &freeSpace, sizeof(unsigned ));
+        fileHandle.writePage(pageIndex, page);
+        free(page);
+        return numOfSlots;
+    }
+    //Returns the pageIndex of the new Page
+    int RecordBasedFileManager::insertDataNewPage(FileHandle &fileHandle, int recordSize, void* record){
+        char* page = (char*)malloc(PAGE_SIZE);
+        //Insert record at the start of the page
+        memcpy(page, record, recordSize);
+
+        //File structure: <start add><record len><start add><record len><N><F>
+
+        int start_address_of_freeSpace = PAGE_SIZE - sizeof(unsigned);
+        int start_address_of_slotNum = PAGE_SIZE - 2*sizeof(unsigned);
+        int start_address_of_directory_lengthField = PAGE_SIZE - 3*sizeof(unsigned);
+        int start_address_of_directory_AddressField = PAGE_SIZE - 4*sizeof(unsigned);
+
+        int freeSpace = PAGE_SIZE - recordSize - 4*sizeof(unsigned);
+        int slotNum = 1;
+        int startAddress = 0;
+        //Store FreeSpace size
+        memcpy(page + start_address_of_freeSpace, &freeSpace, sizeof(unsigned));
+        //Store Number of slots
+        memcpy(page+start_address_of_slotNum, &slotNum, sizeof(unsigned ));
+        //store length field
+        memcpy(page+start_address_of_directory_lengthField, &recordSize, sizeof(unsigned));
+        //store start address
+        memcpy(page+start_address_of_directory_AddressField, &startAddress, sizeof(unsigned));
+
+        //Append page
+        fileHandle.appendPage(page);
+        //Free page malloc
+        free(page);
+        int pageNums = fileHandle.getNumberOfPages();
+        return pageNums-1;
+    }
+    /*
+     * First it will see in the last page if enough space is available
+     * If not it starts looking from the first page if enough space is available
+     * Return the pageIndex where the freeSpace was available
+     * If not found, return -1
+     * In case of not found, a new page will be appended in the caller function*/
+    int RecordBasedFileManager::findFreePageIndex(FileHandle &fileHandle, int recordSize){
+        int pageNums = fileHandle.getNumberOfPages();
+        //Freespace has to be atleast (recordSize + 2*4 B). 2*4 B is for metadata
+        int requiredSize = recordSize + 2*sizeof(unsigned );
+        //First look at last page
+        int start_address_of_freeSpace = PAGE_SIZE - sizeof(unsigned);
+        char* page = (char*)malloc(PAGE_SIZE);
+        //Read last page
+        fileHandle.readPage(pageNums - 1, page);
+        //Read freeSpace Value
+        int freeSpace = 0;
+        memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
+        //Freespace has to be atleast requiredSize
+        if(freeSpace >= requiredSize) return pageNums-1;
+
+        //Or start looking from first page
+        //Don't need to check the last page
+        for(int i = 0; i < pageNums - 1; i++){
+            fileHandle.readPage(i, page);
+            memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
+            if(freeSpace >= requiredSize) return i;
+        }
+        free(page);
+        //If no such page was found, return -1
         return -1;
     }
 
-
-
-    void* RecordBasedFileManager::encoder(const std::vector<Attribute> &recordDescriptor, const void *data){
+    void* RecordBasedFileManager::encoder(const std::vector<Attribute> &recordDescriptor, const void *data, int& getRecordSize){
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil(numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
 
@@ -78,6 +194,7 @@ namespace PeterDB {
         }
 
         int recordSize = calculateRecordSize(N, recordDescriptor, data,nullIndicator);
+        getRecordSize = recordSize;
         void *record = malloc(recordSize);
         //Fill memory with zero
         memset(record, 0, recordSize);

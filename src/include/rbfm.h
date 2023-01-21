@@ -137,11 +137,14 @@ namespace PeterDB {
     private:
         bool isColValueNull(const void *data, int k);
         int calculateRecordSize(int N, const std::vector<Attribute> &recordDescriptor, const void *data, const std::vector<bool> &nullIndicator);
-        void* encoder(const std::vector<Attribute> &recordDescriptor, const void *data);
+        void* encoder(const std::vector<Attribute> &recordDescriptor, const void *data, int& getRecordSize);
         RC copyInputToRecord(void* record, const void *data, const std::vector<Attribute> &recordDescriptor, const std::vector<bool> &nullIndicator, int N);
         int calculateDataSize(const std::vector<Attribute> &recordDescriptor, void* record, const std::vector<bool> &nullIndicator);
         RC copyRecordToData(const std::vector<Attribute> &recordDescriptor, void* data, void* record, const std::vector<bool> &nullIndicator);
         void* decoder(const std::vector<Attribute> &recordDescriptor, void* record);
+        int insertDataNewPage(FileHandle &fileHandle, int recordSize, void* record);
+        int findFreePageIndex(FileHandle &fileHandle, int recordSize);
+        int insertDataByPageIndex(FileHandle &fileHandle, int pageIndex, void* record, int recordSize);
     protected:
         RecordBasedFileManager();                                                   // Prevent construction
         ~RecordBasedFileManager();                                                  // Prevent unwanted destruction
