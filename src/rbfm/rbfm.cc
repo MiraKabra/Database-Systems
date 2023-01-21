@@ -48,31 +48,27 @@ namespace PeterDB {
         void * record = encoder(recordDescriptor, data, recordSize);
         int pageNums = fileHandle.getNumberOfPages();
         //Page num in which data finally got inserted
-        int insertPageIndex = 0;
-        int insertSlotNum = 0;
         /*
          * If pageNums is zero, then this is the first record and
          * we need to append a page*/
 
         if(pageNums == 0){
             int newPageIndex = insertDataNewPage(fileHandle, recordSize, record);
-            insertPageIndex = newPageIndex;
-            insertSlotNum = 1;
+            rid.pageNum = newPageIndex;
+            rid.slotNum = 1;
         }else{
             int freePageIndex = findFreePageIndex(fileHandle, recordSize);
             //No suitable  free space found, so append a new page
             if(freePageIndex == -1){
                 int newPageIndex = insertDataNewPage(fileHandle, recordSize, record);
-                insertPageIndex = newPageIndex;
-                insertSlotNum = 1;
+                rid.pageNum = newPageIndex;
+                rid.slotNum = 1;
             } else {
                 //insert data in the found page
-                insertSlotNum = insertDataByPageIndex(fileHandle, freePageIndex, record, recordSize);
-                insertPageIndex = freePageIndex;
+                rid.slotNum = insertDataByPageIndex(fileHandle, freePageIndex, record, recordSize);
+                rid.pageNum = freePageIndex;
             }
         }
-        rid.slotNum = insertSlotNum;
-        rid.pageNum = insertPageIndex;
         free(record);
         return 0;
     }
@@ -83,34 +79,39 @@ namespace PeterDB {
         fileHandle.readPage(pageIndex, page);
         int start_address_of_slotNum = PAGE_SIZE - 2*sizeof(unsigned);
         //Get Number of slots
-        int numOfSlots = 0;
-        memcpy(&numOfSlots, page + start_address_of_slotNum, sizeof(unsigned ));
+        unsigned numOfSlots = *(unsigned *)(page + start_address_of_slotNum);
+//        memcpy(&numOfSlots, page + start_address_of_slotNum, sizeof(unsigned ));
 
         //from numOfSlots, we need to get the start address and length of the last record
-        int totalLengthOfMetadata = (2 + 2*numOfSlots)*sizeof(unsigned); // 1 for F, 1 for N, 2 for each record
-        int startAddressOfLastRecord = 0;
-        int lengthOfLastRecord = 0;
-        memcpy(&startAddressOfLastRecord, page + PAGE_SIZE - totalLengthOfMetadata, sizeof(unsigned ));
-        memcpy(&lengthOfLastRecord, page + PAGE_SIZE - totalLengthOfMetadata + 4, sizeof(unsigned ) );
+        unsigned totalLengthOfMetadata = (2 + 2 * numOfSlots) * sizeof(unsigned); // 1 for F, 1 for N, 2 for each record
+        unsigned startAddressOfLastRecord, lengthOfLastRecord;
+        memcpy(&startAddressOfLastRecord, page + PAGE_SIZE - totalLengthOfMetadata, sizeof(unsigned));
+        memcpy(&lengthOfLastRecord, page + PAGE_SIZE - totalLengthOfMetadata + 4, sizeof(unsigned));
+//        unsigned startAddressOfLastRecord = ((unsigned *)(page + PAGE_SIZE - totalLengthOfMetadata))[0];
+//        unsigned lengthOfLastRecord = ((unsigned *)(page + PAGE_SIZE - totalLengthOfMetadata))[1];
 
-        int insertAddressForRecord = startAddressOfLastRecord + lengthOfLastRecord;
+        unsigned insertAddressForRecord = startAddressOfLastRecord + lengthOfLastRecord;
         memcpy(page + insertAddressForRecord, record, recordSize);
         /*Add slot info*/
+//        ((unsigned *)(page + PAGE_SIZE - totalLengthOfMetadata))[-1] = recordSize;
+//        ((unsigned *)(page + PAGE_SIZE - totalLengthOfMetadata))[-2] = insertAddressForRecord;
+//        numOfSlots++;
+//        *(unsigned *)(page + start_address_of_slotNum) = numOfSlots;
         //Add length info
         memcpy(page + PAGE_SIZE - totalLengthOfMetadata - sizeof(unsigned), &recordSize, sizeof(unsigned));
         //Add startAddress
         memcpy(page + PAGE_SIZE - totalLengthOfMetadata - 2*sizeof(unsigned), &insertAddressForRecord, sizeof(unsigned ));
         //Update NumSlots
         numOfSlots++;
-        memcpy(page + PAGE_SIZE - 2*sizeof(unsigned ), &numOfSlots, sizeof(unsigned) );
+        memcpy(page + start_address_of_slotNum, &numOfSlots, sizeof(unsigned) );
 
         /*Update free space*/
         //First get the freeSpace val
         int start_address_of_freeSpace = PAGE_SIZE - sizeof(unsigned);
         int freeSpace = 0;
-        memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
-        freeSpace = freeSpace - 2*sizeof(unsigned ) - recordSize;
-        memcpy(page + start_address_of_freeSpace, &freeSpace, sizeof(unsigned ));
+        memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned));
+        freeSpace = freeSpace - 2*sizeof(unsigned) - recordSize;
+        memcpy(page + start_address_of_freeSpace, &freeSpace, sizeof(unsigned));
         fileHandle.writePage(pageIndex, page);
         free(page);
         return numOfSlots;
@@ -134,18 +135,18 @@ namespace PeterDB {
         //Store FreeSpace size
         memcpy(page + start_address_of_freeSpace, &freeSpace, sizeof(unsigned));
         //Store Number of slots
-        memcpy(page+start_address_of_slotNum, &slotNum, sizeof(unsigned ));
+        memcpy(page + start_address_of_slotNum, &slotNum, sizeof(unsigned));
         //store length field
-        memcpy(page+start_address_of_directory_lengthField, &recordSize, sizeof(unsigned));
+        memcpy(page + start_address_of_directory_lengthField, &recordSize, sizeof(unsigned));
         //store start address
-        memcpy(page+start_address_of_directory_AddressField, &startAddress, sizeof(unsigned));
+        memcpy(page + start_address_of_directory_AddressField, &startAddress, sizeof(unsigned));
 
         //Append page
         fileHandle.appendPage(page);
         //Free page malloc
         free(page);
         int pageNums = fileHandle.getNumberOfPages();
-        return pageNums-1;
+        return pageNums - 1;
     }
     /*
      * First it will see in the last page if enough space is available
@@ -319,7 +320,7 @@ namespace PeterDB {
         memcpy(&numSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
         int startAddress = 0;
         int lengthOfRecord = 0;
-        int offsetForStartAddress = PAGE_SIZE - 2 * sizeof(unsigned ) - 2*numSlots * sizeof(unsigned );
+        int offsetForStartAddress = PAGE_SIZE - 2 * sizeof(unsigned ) - 2*slotNum * sizeof(unsigned );
         int offsetForRecordLength = offsetForStartAddress + sizeof(unsigned );
         memcpy(&startAddress, page + offsetForStartAddress, sizeof(unsigned ));
         memcpy(&lengthOfRecord, page + offsetForRecordLength, sizeof(unsigned ));
@@ -479,19 +480,22 @@ namespace PeterDB {
                 memcpy(array, pointer, len * sizeof(char));
                 pointer += len * sizeof(char);
                 offset += len * sizeof(char);
-                str.append(array);
+                str += array;
+//                str.append(array);
             } else if(attr.type == TypeInt){
 //                int val = *(int*) pointer;
                 int val;
                 memcpy(&val, pointer, sizeof(int));
-                str.append(std::to_string(val));
+                str += std::to_string(val);
+//                str.append(std::to_string(val));
                 pointer += sizeof(int);
                 offset += sizeof(int);
             } else {
 //                float val = *(float*)pointer;
                 float val;
                 memcpy(&val, pointer, sizeof(float));
-                str.append(std::to_string(val));
+                str += std::to_string(val);
+//                str.append(std::to_string(val));
                 pointer += sizeof(float);
                 offset += sizeof(float);
             }
