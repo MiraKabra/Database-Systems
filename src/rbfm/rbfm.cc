@@ -72,7 +72,7 @@ namespace PeterDB {
         }
         rid.slotNum = insertSlotNum;
         rid.pageNum = insertPageIndex;
-
+        free(record);
         return 0;
     }
     //Returns slotNum where record was inserted
@@ -307,11 +307,26 @@ namespace PeterDB {
     }
 
 
-
-
     RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                           const RID &rid, void *data) {
-        return -1;
+        int pageIndex = rid.pageNum;
+        int slotNum = rid.slotNum;
+        char* page = (char*)malloc(PAGE_SIZE);
+        fileHandle.readPage(pageIndex, page);
+        int numSlots = 0;
+        memcpy(&numSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
+        int startAddress = 0;
+        int lengthOfRecord = 0;
+        int offsetForStartAddress = PAGE_SIZE - 2 * sizeof(unsigned ) - 2*numSlots * sizeof(unsigned );
+        int offsetForRecordLength = offsetForStartAddress + sizeof(unsigned );
+        memcpy(&startAddress, page + offsetForStartAddress, sizeof(unsigned ));
+        memcpy(&lengthOfRecord, page + offsetForRecordLength, sizeof(unsigned ));
+        void* record = malloc(lengthOfRecord);
+        memcpy(record, page + startAddress, lengthOfRecord);
+        data = decoder(recordDescriptor, record);
+        free(record);
+        free(page);
+        return 0;
     }
 
     void* RecordBasedFileManager::decoder(const std::vector<Attribute> &recordDescriptor, void* record){
@@ -428,7 +443,9 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::printRecord(const std::vector<Attribute> &recordDescriptor, const void *data,
                                            std::ostream &out) {
-        return -1;
+
+
+        return 0;
     }
 
     RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
