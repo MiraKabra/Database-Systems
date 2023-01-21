@@ -459,7 +459,7 @@ namespace PeterDB {
         }
         pointer = pointer + bitMapSize;
         int offset = bitMapSize;
-        std::string str = "";
+//        std::string str = "";
         //<AttributeName1>:\s<Value1>,\s<AttributeName2>:\s<Value2>,\s<AttributeName3>:\s<Value3>\n
         for(int k = 0; k < numberOfCols; k++){
             Attribute attr = recordDescriptor.at(k);
@@ -470,7 +470,10 @@ namespace PeterDB {
             if(isNull) {
 //                str.append("NULL");
                 out << "NULL";
-                if(k < numberOfCols - 1) str.append(", ");
+                if(k < numberOfCols - 1) {
+//                    str.append(", ");
+                    out << ", ";
+                }
                 continue;
             }
             if(attr.type == TypeVarChar){
