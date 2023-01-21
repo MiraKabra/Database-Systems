@@ -170,13 +170,13 @@ namespace PeterDB {
         //Freespace has to be atleast requiredSize
         if(freeSpace >= requiredSize) return pageNums-1;
 
-        //Or start looking from first page
-        //Don't need to check the last page
-        for(int i = 0; i < pageNums - 1; i++){
-            fileHandle.readPage(i, page);
-            memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
-            if(freeSpace >= requiredSize) return i;
-        }
+//        //Or start looking from first page
+//        //Don't need to check the last page
+//        for(int i = 0; i < pageNums - 1; i++){
+//            fileHandle.readPage(i, page);
+//            memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
+//            if(freeSpace >= requiredSize) return i;
+//        }
         free(page);
         //If no such page was found, return -1
         return -1;
