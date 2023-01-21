@@ -65,7 +65,7 @@ namespace PeterDB {
                 int newPageIndex = insertDataNewPage(fileHandle, recordSize, record);
                 insertPageIndex = newPageIndex;
                 insertSlotNum = 1;
-            }else{
+            } else {
                 //insert data in the found page
                 insertSlotNum = insertDataByPageIndex(fileHandle, freePageIndex, record, recordSize);
                 insertPageIndex = freePageIndex;
@@ -184,17 +184,16 @@ namespace PeterDB {
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil((float)numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
 
-        unsigned char* pointer;
         int N = 0;
         std::vector<bool> nullIndicator;
         for(int k = 0; k < numberOfCols; k++){
             bool isNull = isColValueNull(data, k);
             nullIndicator.push_back(isNull);
             if(isNull) continue;
-            N++; //Increase N for non null value
+            N++; // Increase N for non null value
         }
 
-        int recordSize = calculateRecordSize(N, recordDescriptor, data,nullIndicator);
+        int recordSize = calculateRecordSize(N, recordDescriptor, data, nullIndicator);
         getRecordSize = recordSize;
         void *record = malloc(recordSize);
         //Fill memory with zero
@@ -209,14 +208,13 @@ namespace PeterDB {
         char* pointer = (char *)data;
         int offset = 0;
         //Fill first 4 byte with value of N
-        memcpy((char * )record+offset, &N, sizeof(unsigned));
-        //Increase offset on record by 4 B
+        memcpy((char * )record + offset, &N, sizeof(int));
         offset += sizeof(unsigned);
 
-        //Fill the next bitMapSize*sizeof(char) bytes with bitmap
-        memcpy((char *)record + offset, pointer, bitMapSize*sizeof(char));
+        //Fill the next bitMapSize * sizeof(char) bytes with bitmap
+        memcpy((char *)record + offset, pointer, bitMapSize * sizeof(char));
 
-        offset += sizeof(unsigned );
+        offset += 4;
         //Increase pointer to next byte in the *data
         pointer = pointer + bitMapSize;
 
@@ -225,7 +223,7 @@ namespace PeterDB {
          * First data insertion address is calculated as:
          * start address of record + 4 bytes for  N + 4 bytes for bitmap
          * + (N*4) bytes for mini folder of pointers*/
-        int dataInsertionOffsetFromStartOfRecord = (2 + N)*4;
+        int dataInsertionOffsetFromStartOfRecord = sizeof(int) + 4 + N * sizeof(int);
         for(int k = 0; k < numberOfCols; k++){
             bool isNull = nullIndicator.at(k);
             if(isNull) continue;
@@ -234,7 +232,7 @@ namespace PeterDB {
                 int len = *(int *)pointer; //Next 4 byte gives length
                 //The length info was stored in 4 byte. So, increase the pointer by 4 bytes
                 //After this pointer points to value of varchar
-                pointer = pointer + 4;
+                pointer = pointer + sizeof(int);
                 /*
                  * This is not absolute, but offset. eg. if in the file, startAddressOfrecord
                  * is 2000 B, then (2000 + end_address) is where the field ends
@@ -247,17 +245,18 @@ namespace PeterDB {
                 int end_address = dataInsertionOffsetFromStartOfRecord + len - 1;
 
                 memcpy((char *)record + offset, &end_address, sizeof(unsigned));
-
                 offset += sizeof(unsigned);
+
                 //Insert the data at dataInsertionOffsetFromStartOfRecord
-                memcpy((char *)record +  dataInsertionOffsetFromStartOfRecord, pointer, len);
+                memcpy((char *)record + dataInsertionOffsetFromStartOfRecord, pointer, len);
                 dataInsertionOffsetFromStartOfRecord += len;
                 pointer += len;
-            }else{
+            } else {
                 //Pointer points to 4 byte of either int or real type
                 int end_address = dataInsertionOffsetFromStartOfRecord + sizeof(unsigned) - 1;
-                memcpy((char *)record + offset, &end_address, sizeof(unsigned ));
+                memcpy((char *)record + offset, &end_address, sizeof(unsigned));
                 offset += sizeof(unsigned);
+
                 //Insert the data at dataInsertionOffsetFromStartOfRecord
                 memcpy((char *)record +  dataInsertionOffsetFromStartOfRecord, pointer, sizeof(unsigned ));
                 dataInsertionOffsetFromStartOfRecord += sizeof(unsigned);
@@ -270,9 +269,9 @@ namespace PeterDB {
     int RecordBasedFileManager::calculateRecordSize(int N, const std::vector<Attribute> &recordDescriptor, const void *data, const std::vector<bool> &nullIndicator){
 
         int numberOfCols = recordDescriptor.size();
-        int bitMapSize = ceil((float)numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
+        int bitMapSize = ceil((float)numberOfCols / 8); // eg. 1 for 3 cols, 2 for 9 cols
 
-        int recordSize = 4 * (N+2); // 4 byte for N, 4 byte for bitmap, N*4 = size of Mini directory,
+        int recordSize = sizeof(int) + 4 + N * sizeof(int); // 4 byte for N, 4 byte for bitmap, N*4 = size of Mini directory,
         char* pointer = (char *)data + bitMapSize * sizeof(char);
 
         for(int k = 0; k < numberOfCols; k++){
@@ -284,10 +283,12 @@ namespace PeterDB {
                 unsigned len = *(int *) pointer;
                 recordSize += len;
                 pointer = pointer + len + 4;
-            }else{
-                recordSize += 4;
-                //Move pointer by 4 byte
-                pointer += 4;
+            } else if(attr.type == TypeInt) {
+                recordSize += sizeof(int);
+                pointer += sizeof(int);
+            } else {
+                recordSize += sizeof(float);
+                pointer += sizeof(float);
             }
         }
         return recordSize;
@@ -309,7 +310,7 @@ namespace PeterDB {
 
 
     RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
-                                          const RID &rid, void *data) {
+                                          const RID &rid, void *&data) {
         int pageIndex = rid.pageNum;
         int slotNum = rid.slotNum;
         char* page = (char*)malloc(PAGE_SIZE);
@@ -359,15 +360,14 @@ namespace PeterDB {
         int bitMapSize = ceil((float)numberOfCols/8);
         //Get the number of nonnull value from first four bytes
         int N = *(int *) record;
-        //Set offset to start of bitMap
-        int recordOffset = sizeof(unsigned);
         //Copy bitMap
         int dataOffset = 0;
         //Copy the bitmap of bitMapSize
-        memcpy((char*) data + dataOffset, (char*) record + recordOffset, bitMapSize);
+        memcpy((char*) data + dataOffset, (char*) record + sizeof(int), bitMapSize);
 
-        //Increase record offset to next 4 byte
-        recordOffset += sizeof(unsigned);
+        int *minidict = (int *) ((char *)record + sizeof(int) + 4);
+        int numNonNullCols = 0;
+
         //Increase dataOffset to end of bitMap
         dataOffset += bitMapSize;
         int dataInsertionOffsetFromStartOfRecord = (2 + N)*4;
@@ -376,25 +376,22 @@ namespace PeterDB {
             if(isNull) continue;
             Attribute attr = recordDescriptor.at(k);
             if(attr.type == TypeVarChar){
-                int end_address_offset = *((int *) record + recordOffset);
+                int end_address_offset = minidict[numNonNullCols];
                 int len = end_address_offset - dataInsertionOffsetFromStartOfRecord + 1;
                 //Save the length in the 4 bytes of data
                 memcpy((char *) data + dataOffset, &len, sizeof(unsigned));
-                //Increase dataOffset by 4 bytes
                 dataOffset += sizeof(unsigned);
-                //copy
+
                 memcpy((char *)data + dataOffset, (char *) record + dataInsertionOffsetFromStartOfRecord, len);
-                //Increase dataInsertionOffset by length of varchar
                 dataInsertionOffsetFromStartOfRecord += len;
                 dataOffset += len;
-
-            }else{
+            } else {
                 //No need to store size info for int and real type
                 memcpy((char *)data + dataOffset, (char *)record + dataInsertionOffsetFromStartOfRecord, sizeof(unsigned));
                 dataOffset += sizeof(unsigned);
                 dataInsertionOffsetFromStartOfRecord += sizeof(unsigned);
             }
-            recordOffset += sizeof(unsigned);
+            numNonNullCols += 1;
         }
         return 0;
     }
@@ -408,7 +405,9 @@ namespace PeterDB {
         int N = *(int *) record;
 
         //offset to the first box of mini directory
-        int offset = 2 * sizeof(unsigned);
+        int *minidict = (int *) ((char *)record + sizeof(int) + 4);
+        int numNonNullCols = 0;
+
         int dataInsertionOffsetFromStartOfRecord = (2 + N)*4;
         for(int k = 0; k < numberOfCols; k++){
             bool isNull = nullIndicator.at(k);
@@ -416,22 +415,21 @@ namespace PeterDB {
             Attribute attr = recordDescriptor.at(k);
             if(attr.type == TypeVarChar){
                 //append length size to data size
-                int end_address_offset = *((int *) record + offset);
+                int end_address_offset = minidict[numNonNullCols];
                 int len = end_address_offset - dataInsertionOffsetFromStartOfRecord + 1;
                 sizeOfData = sizeOfData + len;
                 //append 4 byte for storing this length size in data
                 sizeOfData += sizeof(unsigned);
                 //Increase dataInsertionOffsetFromStartOfRecord offset by length of varchar
                 dataInsertionOffsetFromStartOfRecord += len;
-            }else{
+            } else {
                 //For int and real type, only value will be added in the
                 //data and no length information. So, just add 4 [size of value]
                 sizeOfData += sizeof(unsigned);
                 //Increase dataInsertionOffsetFromStartOfRecord offset by length of 4
                 dataInsertionOffsetFromStartOfRecord += sizeof(unsigned);
             }
-            //Increase offset by 4 bytes
-            offset += sizeof(unsigned);
+            numNonNullCols += 1;
         }
         return sizeOfData;
     }
