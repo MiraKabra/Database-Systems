@@ -464,10 +464,12 @@ namespace PeterDB {
         for(int k = 0; k < numberOfCols; k++){
             Attribute attr = recordDescriptor.at(k);
             bool isNull = nullIndicator.at(k);
-            str.append(attr.name);
-            str.append(": ");
+//            str.append(attr.name);
+//            str.append(": ");
+            out << attr.name << ": ";
             if(isNull) {
-                str.append("NULL");
+//                str.append("NULL");
+                out << "NULL";
                 if(k < numberOfCols - 1) str.append(", ");
                 continue;
             }
@@ -477,33 +479,42 @@ namespace PeterDB {
                 //After this pointer points to value of varchar
                 pointer += sizeof(int);
                 offset += sizeof(int);
-                char array[len];
+                char array[len + 1];
                 memcpy(array, pointer, len * sizeof(char));
                 pointer += len * sizeof(char);
                 offset += len * sizeof(char);
-                str += array;
+                array[8] = '\0';
+//                str += array;
 //                str.append(array);
+                out << array;
             } else if(attr.type == TypeInt){
 //                int val = *(int*) pointer;
                 int val;
                 memcpy(&val, pointer, sizeof(int));
-                str += std::to_string(val);
+//                str += std::to_string(val);
 //                str.append(std::to_string(val));
+                out << val;
                 pointer += sizeof(int);
                 offset += sizeof(int);
             } else {
 //                float val = *(float*)pointer;
                 float val;
                 memcpy(&val, pointer, sizeof(float));
-                str += std::to_string(val);
+//                str += std::to_string(val);
 //                str.append(std::to_string(val));
+                out << val;
                 pointer += sizeof(float);
                 offset += sizeof(float);
             }
-            if(k < numberOfCols) str.append(", ");
-            else str.append("\n");
+            if(k < numberOfCols) {
+//                str.append(", ");
+                out << ", ";
+            } else {
+//                str.append("\n");
+                out << "\n";
+            }
         }
-        out << str;
+//        out << str;
 //        out.write((char *)&str, sizeof(str));
         return 0;
     }
