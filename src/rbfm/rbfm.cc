@@ -294,7 +294,7 @@ namespace PeterDB {
         return recordSize;
     }
     bool RecordBasedFileManager::isColValueNull(const void *data, int k){
-
+        return (bool)(*((unsigned char *) data + k/8) & (1 << (8 - k%8 - 1)));
         unsigned char* pointer;
         int multiplier = (k / 8); // 0 for k = 2, 1 for k = 8
         int offset = (k % 8 + 1); // 3 for k = 2, 1 for k = 8
@@ -448,6 +448,7 @@ namespace PeterDB {
 
         int N = 0;
         std::vector<bool> nullIndicator;
+
         for(int k = 0; k < numberOfCols; k++){
             bool isNull = isColValueNull(data, k);
             nullIndicator.push_back(isNull);
@@ -465,7 +466,7 @@ namespace PeterDB {
             str.append(": ");
             if(isNull) {
                 str.append("NULL");
-                if(k < numberOfCols) str.append(", ");
+                if(k < numberOfCols - 1) str.append(", ");
                 continue;
             }
             if(attr.type == TypeVarChar){
