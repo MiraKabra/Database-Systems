@@ -1,4 +1,5 @@
 #include "src/include/rbfm.h"
+#include <iostream>
 #include <cmath>
 namespace PeterDB {
     RecordBasedFileManager &RecordBasedFileManager::instance() {
@@ -443,7 +444,6 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::printRecord(const std::vector<Attribute> &recordDescriptor, const void *data,
                                            std::ostream &out) {
-        
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil(numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
         char* pointer = (char *)data;
@@ -499,7 +499,7 @@ namespace PeterDB {
                 str.append("\n");
             }
         }
-
+        out.write((char *)&str, sizeof(str));
         return 0;
     }
 
