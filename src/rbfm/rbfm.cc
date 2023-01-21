@@ -482,14 +482,16 @@ namespace PeterDB {
                 //After this pointer points to value of varchar
                 pointer += sizeof(int);
                 offset += sizeof(int);
-                char array[len + 1];
-                memcpy(array, pointer, len * sizeof(char));
-                pointer += len * sizeof(char);
-                offset += len * sizeof(char);
-                array[8] = '\0';
+                if(len > 0) {
+                    char array[len + 1];
+                    memcpy(array, pointer, len * sizeof(char));
+                    pointer += len * sizeof(char);
+                    offset += len * sizeof(char);
+                    array[len] = '\0';
 //                str += array;
 //                str.append(array);
-                out << array;
+                    out << array;
+                }
             } else if(attr.type == TypeInt){
 //                int val = *(int*) pointer;
                 int val;
