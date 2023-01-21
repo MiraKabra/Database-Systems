@@ -20,7 +20,7 @@ namespace PeterDB {
     RC PagedFileManager::createFile(const std::string &fileName) {
 
         FILE* pFile;
-        pFile = fopen(fileName.c_str(), "rb+");
+        pFile = fopen(fileName.c_str(), "rb+,ccs=UTF-8");
 
         //If file does not exist, it should have returned null when trying to
         //open in read mode. Not null means file existed, hence throw an error
@@ -30,7 +30,7 @@ namespace PeterDB {
 
         //Finally file does not exist, do open a file in write mode to create it
         //Then close the file
-        pFile = fopen(fileName.c_str(), "wb");
+        pFile = fopen(fileName.c_str(), "wb,ccs=UTF-8");
         fclose(pFile);
         return 0;
     }
@@ -47,14 +47,14 @@ namespace PeterDB {
         if(fileHandle.getFile() != nullptr) return -1;
 
         FILE* pFile;
-        pFile = fopen(fileName.c_str(), "rb");
+        pFile = fopen(fileName.c_str(), "rb,ccs=UTF-8");
         // This file does not exist
         if(pFile == nullptr){
             return -1;
         }
         fclose(pFile);
         //Both read and write
-        pFile = fopen(fileName.c_str(), "rb+");
+        pFile = fopen(fileName.c_str(), "rb+,ccs=UTF-8");
         //Assign the file to fileHandle. File is in Open state now and in read mode
         fileHandle.setFile(pFile);
         //Set the counter values
