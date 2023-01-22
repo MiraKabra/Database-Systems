@@ -77,6 +77,7 @@ namespace PeterDB {
     int RecordBasedFileManager::insertDataByPageIndex(FileHandle &fileHandle, int pageIndex, void* record, int recordSize){
 
         char* page =(char *) malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
         int start_address_of_slotNum = PAGE_SIZE - 2*sizeof(unsigned);
         //Get Number of slots
@@ -120,6 +121,7 @@ namespace PeterDB {
     //Returns the pageIndex of the new Page
     int RecordBasedFileManager::insertDataNewPage(FileHandle &fileHandle, int recordSize, void* record){
         char* page = (char*)malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
         //Insert record at the start of the page
         memcpy(page, record, recordSize);
 
@@ -162,20 +164,27 @@ namespace PeterDB {
         //First look at last page
         int start_address_of_freeSpace = PAGE_SIZE - sizeof(unsigned);
         char* page = (char*)malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
         //Read last page
         fileHandle.readPage(pageNums - 1, page);
         //Read freeSpace Value
         int freeSpace = 0;
         memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
         //Freespace has to be atleast requiredSize
-        if(freeSpace >= requiredSize) return pageNums-1;
+        if(freeSpace >= requiredSize){
+            free(page);
+            return pageNums-1;
+        }
 
-//        //Or start looking from first page
-//        //Don't need to check the last page
+        //Or start looking from first page
+        //Don't need to check the last page
 //        for(int i = 0; i < pageNums - 1; i++){
 //            fileHandle.readPage(i, page);
 //            memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
-//            if(freeSpace >= requiredSize) return i;
+//            if(freeSpace >= requiredSize){
+//                free(page);
+//                return i;
+//            }
 //        }
         free(page);
         //If no such page was found, return -1
@@ -316,6 +325,7 @@ namespace PeterDB {
         int pageIndex = rid.pageNum;
         int slotNum = rid.slotNum;
         char* page = (char*)malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
         int numSlots = 0;
         memcpy(&numSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
