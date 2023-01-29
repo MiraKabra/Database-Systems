@@ -27,7 +27,8 @@ namespace PeterDBTesting {
 
     static unsigned char *initializeNullFieldsIndicator(const std::vector<PeterDB::Attribute> &recordDescriptor) {
         int nullFieldsIndicatorActualSize = getActualByteForNullsIndicator((int) recordDescriptor.size());
-        auto indicator = new unsigned char[nullFieldsIndicatorActualSize];
+//        auto indicator = new unsigned char[nullFieldsIndicatorActualSize];
+        unsigned char* indicator = (unsigned char*) malloc(sizeof(unsigned char) * nullFieldsIndicatorActualSize);
         memset(indicator, 0, nullFieldsIndicatorActualSize);
         return indicator;
     }

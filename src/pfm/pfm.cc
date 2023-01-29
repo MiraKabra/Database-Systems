@@ -25,6 +25,7 @@ namespace PeterDB {
         //If file does not exist, it should have returned null when trying to
         //open in read mode. Not null means file existed, hence throw an error
         if(pFile != nullptr){
+            fclose(pFile);
             return -1;
         }
 
@@ -237,6 +238,7 @@ namespace PeterDB {
     RC FileHandle::createHiddenPage(FILE* file){
 
         void *insert = malloc(PAGE_SIZE);
+        memset(insert, 0, PAGE_SIZE);
         /*
          * Set NumPages at first 4 bytes
          * Set ReadCounter at next 4 bytes

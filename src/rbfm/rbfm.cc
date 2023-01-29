@@ -77,6 +77,7 @@ namespace PeterDB {
     int RecordBasedFileManager::insertDataByPageIndex(FileHandle &fileHandle, int pageIndex, void* record, int recordSize){
 
         char* page =(char *) malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
         int start_address_of_slotNum = PAGE_SIZE - 2*sizeof(unsigned);
         //Get Number of slots
@@ -120,6 +121,7 @@ namespace PeterDB {
     //Returns the pageIndex of the new Page
     int RecordBasedFileManager::insertDataNewPage(FileHandle &fileHandle, int recordSize, void* record){
         char* page = (char*)malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
         //Insert record at the start of the page
         memcpy(page, record, recordSize);
 
@@ -162,21 +164,28 @@ namespace PeterDB {
         //First look at last page
         int start_address_of_freeSpace = PAGE_SIZE - sizeof(unsigned);
         char* page = (char*)malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
         //Read last page
         fileHandle.readPage(pageNums - 1, page);
         //Read freeSpace Value
         int freeSpace = 0;
         memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
         //Freespace has to be atleast requiredSize
-        if(freeSpace >= requiredSize) return pageNums-1;
+        if(freeSpace >= requiredSize){
+            free(page);
+            return pageNums-1;
+        }
 
         //Or start looking from first page
         //Don't need to check the last page
-        for(int i = 0; i < pageNums - 1; i++){
-            fileHandle.readPage(i, page);
-            memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
-            if(freeSpace >= requiredSize) return i;
-        }
+//        for(int i = 0; i < pageNums - 1; i++){
+//            fileHandle.readPage(i, page);
+//            memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
+//            if(freeSpace >= requiredSize){
+//                free(page);
+//                return i;
+//            }
+//        }
         free(page);
         //If no such page was found, return -1
         return -1;
@@ -316,6 +325,7 @@ namespace PeterDB {
         int pageIndex = rid.pageNum;
         int slotNum = rid.slotNum;
         char* page = (char*)malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
         int numSlots = 0;
         memcpy(&numSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
@@ -459,16 +469,21 @@ namespace PeterDB {
         }
         pointer = pointer + bitMapSize;
         int offset = bitMapSize;
-        std::string str = "";
+//        std::string str = "";
         //<AttributeName1>:\s<Value1>,\s<AttributeName2>:\s<Value2>,\s<AttributeName3>:\s<Value3>\n
         for(int k = 0; k < numberOfCols; k++){
             Attribute attr = recordDescriptor.at(k);
             bool isNull = nullIndicator.at(k);
-            str.append(attr.name);
-            str.append(": ");
+//            str.append(attr.name);
+//            str.append(": ");
+            out << attr.name << ": ";
             if(isNull) {
-                str.append("NULL");
-                if(k < numberOfCols - 1) str.append(", ");
+//                str.append("NULL");
+                out << "NULL";
+                if(k < numberOfCols - 1) {
+//                    str.append(", ");
+                    out << ", ";
+                }
                 continue;
             }
             if(attr.type == TypeVarChar){
@@ -477,33 +492,44 @@ namespace PeterDB {
                 //After this pointer points to value of varchar
                 pointer += sizeof(int);
                 offset += sizeof(int);
-                char array[len];
-                memcpy(array, pointer, len * sizeof(char));
-                pointer += len * sizeof(char);
-                offset += len * sizeof(char);
-                str += array;
+                if(len > 0) {
+                    char array[len + 1];
+                    memcpy(array, pointer, len * sizeof(char));
+                    pointer += len * sizeof(char);
+                    offset += len * sizeof(char);
+                    array[len] = '\0';
+//                str += array;
 //                str.append(array);
+                    out << array;
+                }
             } else if(attr.type == TypeInt){
 //                int val = *(int*) pointer;
                 int val;
                 memcpy(&val, pointer, sizeof(int));
-                str += std::to_string(val);
+//                str += std::to_string(val);
 //                str.append(std::to_string(val));
+                out << val;
                 pointer += sizeof(int);
                 offset += sizeof(int);
             } else {
 //                float val = *(float*)pointer;
                 float val;
                 memcpy(&val, pointer, sizeof(float));
-                str += std::to_string(val);
+//                str += std::to_string(val);
 //                str.append(std::to_string(val));
+                out << val;
                 pointer += sizeof(float);
                 offset += sizeof(float);
             }
-            if(k < numberOfCols) str.append(", ");
-            else str.append("\n");
+            if(k < numberOfCols) {
+//                str.append(", ");
+                out << ", ";
+            } else {
+//                str.append("\n");
+                out << "\n";
+            }
         }
-        out << str;
+//        out << str;
 //        out.write((char *)&str, sizeof(str));
         return 0;
     }

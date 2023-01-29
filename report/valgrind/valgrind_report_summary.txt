@@ -1,0 +1,24 @@
+In pfm file: No memory was leaked. And all the tests passed. Screenshot of tests passed is attached.
+
+
+HEAP SUMMARY:
+    in use at exit: 0 bytes in 0 blocks
+  total heap usage: 1,048 allocs, 1,048 frees, 3,021,941 bytes allocated
+
+All heap blocks were freed -- no leaks are possible
+
+ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+
+
+In rbfm file: No memory was leaked. And all the tests passed. Screenshot of tests passed is attached.
+
+HEAP SUMMARY:
+    in use at exit: 0 bytes in 0 blocks
+  total heap usage: 84,796 allocs, 84,796 frees, 159,406,049 bytes allocated
+
+All heap blocks were freed -- no leaks are possible
+
+For lists of detected and suppressed errors, rerun with: -s
+ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
+
+There was one error coming from the rbfm_test_utils.h file because an object created by new was getting deleted by free, which was a mismatch. I changed it to malloc.
