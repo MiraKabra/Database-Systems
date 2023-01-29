@@ -178,14 +178,14 @@ namespace PeterDB {
 
         //Or start looking from first page
         //Don't need to check the last page
-//        for(int i = 0; i < pageNums - 1; i++){
-//            fileHandle.readPage(i, page);
-//            memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
-//            if(freeSpace >= requiredSize){
-//                free(page);
-//                return i;
-//            }
-//        }
+        for(int i = 0; i < pageNums - 1; i++){
+            fileHandle.readPage(i, page);
+            memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
+            if(freeSpace >= requiredSize){
+                free(page);
+                return i;
+            }
+        }
         free(page);
         //If no such page was found, return -1
         return -1;
