@@ -73,6 +73,43 @@ namespace PeterDB {
         free(record);
         return 0;
     }
+    /*
+     * Insert data in the hole
+     * right shift all other data
+     * */
+    RC RecordBasedFileManager::insert_data_in_hole(char* page, void* record, int recordSize, int holeNum, int totalSlots){
+        unsigned insertAddressForRecord;
+        //This is a special case as there is no data on the right from which
+        //to get the insertion address. So, the insertion address in this case is zero
+        // if totalSlots is 1. Else, we get it from the record that resides on the left
+        // (i.e. immediate right slot)
+        //If totalSlots is 1, this is the hole itself
+        if(totalSlots == 1){
+            insertAddressForRecord = 0;
+        }
+        else if(holeNum == totalSlots){
+            //So, in this case totalSlots > 1
+            int right_slot_data_address = *(int *)(page + getStartAddressOffset(holeNum-1));
+            int right_slot_data_len = *(int *)(page + getLenAddressOffset(holeNum-1));
+            insertAddressForRecord = right_slot_data_address + right_slot_data_len;
+        }
+        else{
+            //Hole resides in between the slots. So, get the address of the
+            //record that will become immediate right to it (i.e. immediate left slot)
+            int left_slot_data_address = *(int *)(page + getStartAddressOffset(holeNum+1));
+            insertAddressForRecord = left_slot_data_address;
+        }
+        //Shift other records to right
+        shiftRecordsRight(page, totalSlots, holeNum+1, recordSize);
+        //Now that other data are shifted, insert this record
+        //Also update the address and length value in the slot of this record
+        memcpy(page + insertAddressForRecord, record, recordSize);
+        //Update address and length field in slot
+        memcpy(page+ getStartAddressOffset(holeNum), &insertAddressForRecord, sizeof (unsigned ));
+        memcpy(page+ getLenAddressOffset(holeNum), &recordSize, sizeof (unsigned ));
+        return 0;
+    }
+
     //Returns slotNum where record was inserted
     int RecordBasedFileManager::insertDataByPageIndex(FileHandle &fileHandle, int pageIndex, void* record, int recordSize){
 
@@ -84,39 +121,127 @@ namespace PeterDB {
         unsigned numOfSlots = *(unsigned *)(page + start_address_of_slotNum);
 //        memcpy(&numOfSlots, page + start_address_of_slotNum, sizeof(unsigned ));
 
-        //from numOfSlots, we need to get the start address and length of the last record
-        unsigned totalLengthOfMetadata = (2 + 2 * numOfSlots) * sizeof(unsigned); // 1 for F, 1 for N, 2 for each record
-        unsigned startAddressOfLastRecord, lengthOfLastRecord;
-        memcpy(&startAddressOfLastRecord, page + PAGE_SIZE - totalLengthOfMetadata, sizeof(unsigned));
-        memcpy(&lengthOfLastRecord, page + PAGE_SIZE - totalLengthOfMetadata + 4, sizeof(unsigned));
+        //check if free slot exists
+        int holeNum = free_slot_num(page, numOfSlots);
+        int insertion_index;
+        //Get FreeSpace details
+        int start_address_of_freeSpace = PAGE_SIZE - sizeof(unsigned);
+        int freeSpace = 0;
+        memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned));
+
+        //Insert data in free slot, if found a free slot
+        if(holeNum != -1){
+            insert_data_in_hole(page, record, recordSize, holeNum, numOfSlots);
+            insertion_index = holeNum;
+            /*Update free space value*
+             * No new slot was used*/
+            freeSpace = freeSpace - recordSize;
+        }else{
+            //from numOfSlots, we need to get the start address and length of the last record
+            unsigned totalLengthOfMetadata = (2 + 2 * numOfSlots) * sizeof(unsigned); // 1 for F, 1 for N, 2 for each record
+            unsigned startAddressOfLastRecord, lengthOfLastRecord;
+            memcpy(&startAddressOfLastRecord, page + PAGE_SIZE - totalLengthOfMetadata, sizeof(unsigned));
+            memcpy(&lengthOfLastRecord, page + PAGE_SIZE - totalLengthOfMetadata + 4, sizeof(unsigned));
 //        unsigned startAddressOfLastRecord = ((unsigned *)(page + PAGE_SIZE - totalLengthOfMetadata))[0];
 //        unsigned lengthOfLastRecord = ((unsigned *)(page + PAGE_SIZE - totalLengthOfMetadata))[1];
 
-        unsigned insertAddressForRecord = startAddressOfLastRecord + lengthOfLastRecord;
-        memcpy(page + insertAddressForRecord, record, recordSize);
-        /*Add slot info*/
+            unsigned insertAddressForRecord = startAddressOfLastRecord + lengthOfLastRecord;
+            memcpy(page + insertAddressForRecord, record, recordSize);
+            /*Add slot info*/
 //        ((unsigned *)(page + PAGE_SIZE - totalLengthOfMetadata))[-1] = recordSize;
 //        ((unsigned *)(page + PAGE_SIZE - totalLengthOfMetadata))[-2] = insertAddressForRecord;
 //        numOfSlots++;
 //        *(unsigned *)(page + start_address_of_slotNum) = numOfSlots;
-        //Add length info
-        memcpy(page + PAGE_SIZE - totalLengthOfMetadata - sizeof(unsigned), &recordSize, sizeof(unsigned));
-        //Add startAddress
-        memcpy(page + PAGE_SIZE - totalLengthOfMetadata - 2*sizeof(unsigned), &insertAddressForRecord, sizeof(unsigned ));
-        //Update NumSlots
-        numOfSlots++;
-        memcpy(page + start_address_of_slotNum, &numOfSlots, sizeof(unsigned) );
+            //Add length info
+            memcpy(page + PAGE_SIZE - totalLengthOfMetadata - sizeof(unsigned), &recordSize, sizeof(unsigned));
+            //Add startAddress
+            memcpy(page + PAGE_SIZE - totalLengthOfMetadata - 2*sizeof(unsigned), &insertAddressForRecord, sizeof(unsigned ));
+            //Update NumSlots
+            numOfSlots++;
+            memcpy(page + start_address_of_slotNum, &numOfSlots, sizeof(unsigned) );
+            insertion_index = numOfSlots;
 
+            /*Update free space value*/
+            freeSpace = freeSpace - 2*sizeof(unsigned) - recordSize;
+        }
         /*Update free space*/
-        //First get the freeSpace val
-        int start_address_of_freeSpace = PAGE_SIZE - sizeof(unsigned);
-        int freeSpace = 0;
-        memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned));
-        freeSpace = freeSpace - 2*sizeof(unsigned) - recordSize;
         memcpy(page + start_address_of_freeSpace, &freeSpace, sizeof(unsigned));
         fileHandle.writePage(pageIndex, page);
         free(page);
-        return numOfSlots;
+        return insertion_index;
+    }
+    /*
+     * Scan if any slot is free. It will be checked by checking the length field.
+     * The length field for a free slot is -1
+     * If yes, return the slot number.
+     * else, return -1
+     * */
+    int RecordBasedFileManager::free_slot_num(char* page, int totalSlots){
+        for(int i = 1; i <= totalSlots; i++){
+            int len_offset = getLenAddressOffset(i);
+            int curr_record_len = 0;
+            memcpy(&curr_record_len, page + len_offset, sizeof (unsigned ));
+            if(curr_record_len == -1) return i;
+        }
+        return -1;
+    }
+    /*
+     * This will be used in both InsertRecord and upDateRecord (if record is updated to longer length)
+     * Starting from the last Slot number to startSlot number, shift all records to right by shiftBy length
+     * Update their offset.
+     * If startSlot is more than totalSlots, then just return as there is nothing to shift
+     * Note: this function does not update the free space after shifting
+     * */
+    RC RecordBasedFileManager::shiftRecordsRight(char* page, int totalSlots, int startSlot, int shiftBy){
+        if(startSlot > totalSlots) return 0;
+        //Start by shifting rightmost element first
+        for(int i = totalSlots; i >= startSlot; i--){
+            int curr_record_start_addr = getStartAddressOffset(i);
+            int curr_record_len_addr = getLenAddressOffset(i);
+            int curr_record_len = 0;
+            int curr_record_data_addr = 0;
+            memcpy(&curr_record_data_addr, page + curr_record_start_addr, sizeof (unsigned ));
+            //If this is a hole, don't do anything
+            if(curr_record_data_addr == -1){
+                continue;
+            }
+            int new_addr_offset = curr_record_data_addr + shiftBy;
+            memcpy(&curr_record_len, page + curr_record_len_addr, sizeof (unsigned ));
+            //shift the data to right
+            memmove(page + new_addr_offset, page + curr_record_data_addr, curr_record_len);
+            //Update the data address in the slot
+            memcpy(page + curr_record_start_addr, &new_addr_offset, sizeof (unsigned ));
+        }
+        return 0;
+    }
+    /*
+     * This will be used in both deleteRecord and upDateRecord (if record is updated to shorter length)
+     * Starting from the startSlot number to last Slot number, shift all records to left by shiftBy length.
+     * Update their offset.
+     * If startSlot is more than totalSlots, then just return as there is nothing to shift
+     * Note: this function does not update the free space after shifting
+     * */
+    RC RecordBasedFileManager::shiftRecordsLeft(char* page, int totalSlots, int startSlot, int shiftBy){
+        if(startSlot > totalSlots) return 0;
+        //start shifting the leftmost element first
+        for(int i = startSlot; i <= totalSlots; i++){
+            int curr_record_start_addr = getStartAddressOffset(i);
+            int curr_record_len_addr = getLenAddressOffset(i);
+            int curr_record_len = 0;
+            int curr_record_data_addr = 0;
+            memcpy(&curr_record_data_addr, page + curr_record_start_addr, sizeof (unsigned ));
+            //If this is a hole, don't do anything
+            if(curr_record_data_addr == -1){
+                continue;
+            }
+            int new_addr_offset = curr_record_data_addr - shiftBy;
+            memcpy(&curr_record_len, page + curr_record_len_addr, sizeof (unsigned ));
+            //shift the data to left
+            memmove(page + new_addr_offset, page + curr_record_data_addr, curr_record_len);
+            //Update the data address in the slot
+            memcpy(page + curr_record_start_addr, &new_addr_offset, sizeof (unsigned ));
+        }
+        return 0;
     }
     //Returns the pageIndex of the new Page
     int RecordBasedFileManager::insertDataNewPage(FileHandle &fileHandle, int recordSize, void* record){
@@ -335,6 +460,11 @@ namespace PeterDB {
         int offsetForRecordLength = offsetForStartAddress + sizeof(unsigned );
         memcpy(&startAddress, page + offsetForStartAddress, sizeof(unsigned ));
         memcpy(&lengthOfRecord, page + offsetForRecordLength, sizeof(unsigned ));
+        //This record was deleted, so cant be read
+        if(lengthOfRecord == -1){
+            free(page);
+            return -1;
+        }
         void* record = malloc(lengthOfRecord);
         memcpy(record, page + startAddress, lengthOfRecord);
         decoder(recordDescriptor, record, data);
@@ -449,9 +579,63 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const RID &rid) {
-        return -1;
+        int pageIndex = rid.pageNum;
+        int slotNum = rid.slotNum;
+        char* page = (char*)malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
+        fileHandle.readPage(pageIndex, page);
+
+        int numSlots = 0;
+        memcpy(&numSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
+        int freeSpace = 0;
+        memcpy(&freeSpace, page + PAGE_SIZE - sizeof (unsigned ) , sizeof (unsigned ));
+        int data_address_offset = getStartAddressOffset(slotNum);
+        int len_address_offset = getLenAddressOffset(slotNum);
+        //Length of this record
+        int deleted_record_len = 0;
+        memcpy(&deleted_record_len, page + len_address_offset, sizeof (unsigned )); //pass
+        /*Put -1 in the length and start address of this record
+         *
+         * */
+        int recordDeleted = -1;
+        memcpy(page + len_address_offset, &recordDeleted, sizeof (unsigned ));
+        memcpy(page + data_address_offset, &recordDeleted, sizeof (unsigned ));
+
+        /*
+         * Move the records at the right of this to left.
+         * Update free space
+         * */
+        shiftRecordsLeft(page, numSlots, slotNum + 1, deleted_record_len);
+
+        //Update freespace field
+        freeSpace = freeSpace - deleted_record_len;
+        memcpy(page + PAGE_SIZE - sizeof (unsigned ), &freeSpace, sizeof (unsigned));
+        fileHandle.writePage(pageIndex, page);
+        free(page);
+        return 0;
+    }
+    /*
+     * Returns the start of data field address for given slot number
+     * 1 for F, 1 for N, 2*SlotNum for each slot
+     * */
+    int RecordBasedFileManager::getStartAddressOffset(int slotNum){
+        return (PAGE_SIZE - (2 + 2*slotNum)*sizeof (unsigned ));
     }
 
+    /*
+     * Returns the start of length field address for given slot number
+     * */
+    int RecordBasedFileManager::getLenAddressOffset(int slotNum){
+        return (PAGE_SIZE - (2 + 2*slotNum - 1)*sizeof (unsigned ));
+    }
+    //If slot is empty, the length is -1, return true
+    //else return false
+    bool RecordBasedFileManager::is_slot_empty(char* page, int slotNum){
+        int len = 0;
+        memcpy(&len, page + PAGE_SIZE - (2 + 2*slotNum - 1)*sizeof (unsigned ), sizeof (unsigned ));
+        if(len == -1) return true;
+        return false;
+    }
     RC RecordBasedFileManager::printRecord(const std::vector<Attribute> &recordDescriptor, const void *data,
                                            std::ostream &out) {
         int numberOfCols = recordDescriptor.size();

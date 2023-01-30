@@ -144,6 +144,13 @@ namespace PeterDB {
         int insertDataNewPage(FileHandle &fileHandle, int recordSize, void* record);
         int findFreePageIndex(FileHandle &fileHandle, int recordSize);
         int insertDataByPageIndex(FileHandle &fileHandle, int pageIndex, void* record, int recordSize);
+        bool is_slot_empty(char* page, int slotNum);
+        int getStartAddressOffset(int slotNum);
+        int getLenAddressOffset(int slotNum);
+        int free_slot_num(char* page, int numSlots);
+        RC shiftRecordsLeft(char* page, int totalSlots, int startSlot, int shiftBy);
+        RC shiftRecordsRight(char* page, int totalSlots, int startSlot, int shiftBy);
+        RC insert_data_in_hole(char* page, void* record, int recordSize, int holeNum, int totalSlots);
     protected:
         RecordBasedFileManager();                                                   // Prevent construction
         ~RecordBasedFileManager();                                                  // Prevent unwanted destruction
