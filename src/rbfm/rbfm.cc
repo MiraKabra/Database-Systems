@@ -73,6 +73,36 @@ namespace PeterDB {
         free(record);
         return 0;
     }
+
+    RC RecordBasedFileManager::insertMiscData(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, void *record, int recordSize, RID &rid) {
+
+        int pageNums = fileHandle.getNumberOfPages();
+        //Page num in which data finally got inserted
+        /*
+         * If pageNums is zero, then this is the first record and
+         * we need to append a page*/
+
+        if(pageNums == 0){
+            int newPageIndex = insertDataNewPage(fileHandle, recordSize, record);
+            rid.pageNum = newPageIndex;
+            rid.slotNum = 1;
+        }else{
+            int freePageIndex = findFreePageIndex(fileHandle, recordSize);
+            //No suitable  free space found, so append a new page
+            if(freePageIndex == -1){
+                int newPageIndex = insertDataNewPage(fileHandle, recordSize, record);
+                rid.pageNum = newPageIndex;
+                rid.slotNum = 1;
+            } else {
+                //insert data in the found page
+                rid.slotNum = insertDataByPageIndex(fileHandle, freePageIndex, record, recordSize);
+                rid.pageNum = freePageIndex;
+            }
+        }
+        free(record);
+        return 0;
+    }
+
     /*
      * Insert data in the hole
      * right shift all other data
@@ -720,9 +750,157 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const void *data, const RID &rid) {
-        return -1;
+
+        int updatedRecordSize = 0;
+        //It will store the size of the record in the recordSize variable
+        void * record = encoder(recordDescriptor, data, updatedRecordSize);
+
+        updateMiscRecord(fileHandle, recordDescriptor, record, updatedRecordSize, rid);
     }
 
+    RC RecordBasedFileManager::updateMiscRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, void *record, int updatedRecordSize, const RID &rid) {
+        int pageIndex = rid.pageNum;
+        int slotNum = rid.slotNum;
+        char* page = (char*)malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
+        fileHandle.readPage(pageIndex, page);
+
+        int len_address = getLenAddressOffset(slotNum);
+        int data_start_address = getStartAddressOffset(slotNum);
+        int record_old_len = 0;
+        int record_data_addr = 0;
+        memcpy(&record_old_len, page + len_address, sizeof (unsigned ));
+        memcpy(&record_data_addr, page + data_start_address, sizeof (unsigned ));
+        if(isTombStone(record_data_addr)){
+            RID next_rid;
+            tombStonePointerExtractor(next_rid, record_data_addr, page);
+            updateRecord(fileHandle, recordDescriptor, data, next_rid);
+        }
+        bool is_internal = isInternalId(record_data_addr);
+
+        record_data_addr = record_data_addr & ((1 << 17) - 1);
+
+        int numSlots = 0;
+        memcpy(&numSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
+        int freeSpace = 0;
+        memcpy(&freeSpace, page + PAGE_SIZE - sizeof (unsigned ) , sizeof (unsigned ));
+
+        /*
+         * This is a simple case
+         * If the updated record size id less than the old size
+         * Just update the record, update the length data
+         * and shift all the other record to left(Similar to delete record).
+         * No change in internal id flag of the address, as it is still an internal id
+         */
+        if(updatedRecordSize < record_old_len){
+            //Add data
+            memcpy(page + record_data_addr, record, updatedRecordSize);
+            //Update length field
+            memcpy(page + len_address, &updatedRecordSize, sizeof (unsigned ));
+            //shift all other data to left
+            shiftRecordsLeft(page, numSlots ,slotNum + 1, record_old_len - updatedRecordSize);
+            //Update free space
+            freeSpace = freeSpace + (record_old_len - updatedRecordSize);
+            memcpy(page + PAGE_SIZE - sizeof (unsigned ), &freeSpace, sizeof (unsigned));
+        }else{
+            /*
+             * This is a trickier one. It has two cases.
+             * a. If the free space in the page is enough to accommodate it,
+             * then it is easy. Simply rightshift all other record and insert this. No change in internal id flag of the address, as it is still an internal id
+             * b. This case is tricky. If there is not enough space, we need to find another page and mark this slot as tombstone. In this case if it was an internal id, we need to remove the internal id flag other than adding a tombstone flag.
+             * */
+            if(updatedRecordSize - record_old_len <= freeSpace){
+                shiftRecordsRight(page, numSlots, slotNum + 1, updatedRecordSize - record_old_len);
+                //Now add the record
+                memcpy(page + record_data_addr, record, updatedRecordSize);
+                //Update length field
+                memcpy(page + len_address, &updatedRecordSize, sizeof (unsigned ));
+                //Update free space
+                freeSpace = freeSpace - (updatedRecordSize - record_old_len);
+                memcpy(page + PAGE_SIZE - sizeof (unsigned ), &freeSpace, sizeof (unsigned));
+            }else{
+                //The tricky case
+
+                /*
+                 * ToDo: Add record id info to this data*/
+                //check if it was previously stored in an internal id
+                RID original_rid;
+                char* internal_old_record;
+                if(is_internal){
+                    internalRecordExtractor(original_rid, record_data_addr, record_old_len, page, internal_old_record);
+                }else{
+                    original_rid.pageNum = pageIndex;
+                    original_rid.slotNum = slotNum;
+                }
+                RID insert_rid;
+                int updatedRecordSize = 0;
+                void * updated_record = encoder(recordDescriptor, data, updatedRecordSize);
+                //Add thr original RID values to this record
+                char* rid_added_updated_record = (char*)malloc(updatedRecordSize + 6*sizeof (char));
+                memset(rid_added_updated_record, 0, updatedRecordSize + 6*sizeof (char));
+                memcpy(rid_added_updated_record, updated_record, updatedRecordSize);
+                memcpy(rid_added_updated_record + updatedRecordSize, &original_rid.pageNum, sizeof (unsigned ));
+                memcpy(rid_added_updated_record + updatedRecordSize + sizeof (unsigned ), &original_rid.slotNum, 2*sizeof (char));
+                insertMiscData(fileHandle, recordDescriptor, rid_added_updated_record, updatedRecordSize + 6*sizeof (char), insert_rid);
+                /*
+                 * Update the slot inserted to indicate that it's
+                 * an internal flag*/
+                int insert_pageNum = insert_rid.pageNum;
+                int insert_slotNum = insert_rid.slotNum;
+                char* insert_page = (char*)malloc(PAGE_SIZE);
+                memset(insert_page, 0, PAGE_SIZE);
+                fileHandle.readPage(insert_pageNum, insert_page);
+
+
+                int addr = getStartAddressOffset(insert_slotNum);
+                int record_addr = *(int *)(insert_page + addr);
+                record_addr = record_addr | (1 << 30);
+                memcpy(insert_page + addr, &record_addr, sizeof (unsigned));
+
+
+                fileHandle.writePage(insert_pageNum, insert_page);
+                free(insert_page);
+                //Store the insert page num and slot num info here
+                //This page will fo sure have the size available for
+                //this update. Not calling updateRecord function here, because the data is not the format of *data
+                //So, do a insertion from scratch
+
+                //Create data
+                int tombStone_data_len = 6*sizeof(char);
+                char* tombStoneData = (char*)malloc(tombStone_data_len);
+                memcpy(tombStoneData, &insert_pageNum, sizeof(unsigned ));
+                memcpy(tombStoneData + sizeof (unsigned ), &insert_slotNum, 2*sizeof (char));
+
+
+            }
+        }
+
+    }
+
+    bool RecordBasedFileManager::isTombStone(int address){
+        if((address & (1 << 31)) == 0) return false;
+        return true;
+    }
+    bool RecordBasedFileManager::isInternalId(int address){
+        if((address & (1 << 30)) == 0) return false;
+        return true;
+    }
+    RC RecordBasedFileManager::tombStonePointerExtractor(RID &rid, int addr, char* page){
+        addr = addr & ((1 << 17) - 1);
+        memcpy(&rid.pageNum, page+ addr,sizeof (unsigned ));
+        memcpy(&rid.slotNum,page+addr+sizeof (unsigned ),2*sizeof (char));
+        return 0;
+    }
+    RC RecordBasedFileManager::internalRecordExtractor(RID &real_rid, int addr, int len, char* page, char* record){
+        addr = addr & ((1 << 17) - 1);
+        //The actual record
+        memcpy(record, page + addr, len - 6);
+        //Copy the page number
+        memcpy(&real_rid.pageNum, page + addr + len - sizeof (unsigned ) - 2*sizeof (char ), sizeof (unsigned ));
+        //Copy the slot number
+        memcpy(&real_rid.slotNum, page + addr + len - 2*sizeof (char ), 2*sizeof (char));
+        return 0;
+    }
     RC RecordBasedFileManager::readAttribute(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                              const RID &rid, const std::string &attributeName, void *data) {
         return -1;

@@ -151,6 +151,12 @@ namespace PeterDB {
         RC shiftRecordsLeft(char* page, int totalSlots, int startSlot, int shiftBy);
         RC shiftRecordsRight(char* page, int totalSlots, int startSlot, int shiftBy);
         RC insert_data_in_hole(char* page, void* record, int recordSize, int holeNum, int totalSlots);
+        bool isTombStone(int address);
+        bool isInternalId(int address);
+        RC tombStonePointerExtractor(RID &rid, int addr, char* page);
+        RC internalRecordExtractor(RID &real_rid, int addr, int len, char* page, char* record);
+        RC insertMiscData(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,void *record, int recordSize, RID &rid);
+        RC updateMiscRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, void *record, int updatedRecordSize, const RID &rid);
     protected:
         RecordBasedFileManager();                                                   // Prevent construction
         ~RecordBasedFileManager();                                                  // Prevent unwanted destruction
