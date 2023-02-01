@@ -920,7 +920,7 @@ namespace PeterDB {
                  * a. Internal id flag removal: no action as record_data_addr & ((1 << 17) - 1) took care of it
                  * b. Add tombstone flag
                  * Length field update was taken care of because it called updateMiscRecord*/
-
+                fileHandle.readPage(pageIndex, page);
                 record_data_addr = record_data_addr |(1 << 31);
                 memcpy(page + data_start_address, &record_data_addr, sizeof (unsigned ));
                 fileHandle.writePage(pageIndex, page);
