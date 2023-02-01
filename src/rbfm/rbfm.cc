@@ -165,7 +165,7 @@ namespace PeterDB {
             insertion_index = holeNum;
             /*Update free space value*
              * No new slot was used*/
-            freeSpace = freeSpace - recordSize;
+            freeSpace = freeSpace - std::max(recordSize,6);
         }else{
             //from numOfSlots, we need to get the start address and length of the last record
             unsigned totalLengthOfMetadata = (2 + 2 * numOfSlots) * sizeof(unsigned); // 1 for F, 1 for N, 2 for each record
@@ -192,7 +192,7 @@ namespace PeterDB {
             insertion_index = numOfSlots;
 
             /*Update free space value*/
-            freeSpace = freeSpace - 2*sizeof(unsigned) - recordSize;
+            freeSpace = freeSpace - 2*sizeof(unsigned) - std::max(recordSize,6);
         }
         /*Update free space*/
         memcpy(page + start_address_of_freeSpace, &freeSpace, sizeof(unsigned));
@@ -286,8 +286,10 @@ namespace PeterDB {
         int start_address_of_slotNum = PAGE_SIZE - 2*sizeof(unsigned);
         int start_address_of_directory_lengthField = PAGE_SIZE - 3*sizeof(unsigned);
         int start_address_of_directory_AddressField = PAGE_SIZE - 4*sizeof(unsigned);
-
-        int freeSpace = PAGE_SIZE - recordSize - 4*sizeof(unsigned);
+        //Always reserve 6 byte atleast because if it becomes a tombstone,
+        //it will require 6 byte
+        int deductible_space = std::max(recordSize, 6);
+        int freeSpace = PAGE_SIZE - deductible_space - 4*sizeof(unsigned);
         int slotNum = 1;
         int startAddress = 0;
         //Store FreeSpace size
@@ -315,7 +317,7 @@ namespace PeterDB {
     int RecordBasedFileManager::findFreePageIndex(FileHandle &fileHandle, int recordSize){
         int pageNums = fileHandle.getNumberOfPages();
         //Freespace has to be atleast (recordSize + 2*4 B). 2*4 B is for metadata
-        int requiredSize = recordSize + 2*sizeof(unsigned );
+        int requiredSize = std::max(recordSize,6) + 2*sizeof(unsigned );
         //First look at last page
         int start_address_of_freeSpace = PAGE_SIZE - sizeof(unsigned);
         char* page = (char*)malloc(PAGE_SIZE);
@@ -482,12 +484,14 @@ namespace PeterDB {
         char* page = (char*)malloc(PAGE_SIZE);
         memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
+        int offsetForStartAddress = getStartAddressOffset(slotNum);
+        int offsetForRecordLength = getLenAddressOffset(slotNum);
+
         int numSlots = 0;
         memcpy(&numSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
         int startAddress = 0;
         int lengthOfRecord = 0;
-        int offsetForStartAddress = PAGE_SIZE - 2 * sizeof(unsigned ) - 2*slotNum * sizeof(unsigned );
-        int offsetForRecordLength = offsetForStartAddress + sizeof(unsigned );
+
         memcpy(&startAddress, page + offsetForStartAddress, sizeof(unsigned ));
         memcpy(&lengthOfRecord, page + offsetForRecordLength, sizeof(unsigned ));
         //This record was deleted, so cant be read
@@ -495,10 +499,22 @@ namespace PeterDB {
             free(page);
             return -1;
         }
-        void* record = malloc(lengthOfRecord);
-        memcpy(record, page + startAddress, lengthOfRecord);
-        decoder(recordDescriptor, record, data);
-        free(record);
+        bool tombstone_flag = isTombStone(startAddress);
+        if(tombstone_flag){
+            RID next_rid;
+            tombStonePointerExtractor(next_rid, startAddress, page);
+            readRecord(fileHandle, recordDescriptor, next_rid, data);
+        }else{
+            bool internal_id_flag = isInternalId(startAddress);
+            if(internal_id_flag){
+                lengthOfRecord = lengthOfRecord - 6*sizeof (char);
+            }
+            startAddress = startAddress & ((1 << 17) - 1);
+            void* record = malloc(lengthOfRecord);
+            memcpy(record, page + startAddress, lengthOfRecord);
+            decoder(recordDescriptor, record, data);
+            free(record);
+        }
         free(page);
         return 0;
     }
@@ -553,7 +569,7 @@ namespace PeterDB {
                 //Save the length in the 4 bytes of data
                 memcpy((char *) data + dataOffset, &len, sizeof(unsigned));
                 dataOffset += sizeof(unsigned);
-
+                //Mira
                 memcpy((char *)data + dataOffset, (char *) record + dataInsertionOffsetFromStartOfRecord, len);
                 dataInsertionOffsetFromStartOfRecord += len;
                 dataOffset += len;
@@ -615,6 +631,32 @@ namespace PeterDB {
         memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
 
+        int data_address_offset = getStartAddressOffset(slotNum);
+        int record_address = *(int *)(page + data_address_offset);
+
+        //Check if tombstone
+        bool tombstone_flag = isTombStone(record_address);
+
+        if(tombstone_flag){
+            RID next_rid;
+            tombStonePointerExtractor(next_rid, record_address, page);
+            deleteRecord(fileHandle, recordDescriptor, next_rid);
+        }
+        /*
+         * It does not matter if it is internal id or not,
+         * the deleteGivenRecord function will simply delete it*/
+        deleteGivenRecord(fileHandle, recordDescriptor, rid);
+        return 0;
+    }
+
+    RC RecordBasedFileManager::deleteGivenRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
+                                            const RID &rid) {
+        int pageIndex = rid.pageNum;
+        int slotNum = rid.slotNum;
+        char* page = (char*)malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
+        fileHandle.readPage(pageIndex, page);
+
         int numSlots = 0;
         memcpy(&numSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
         int freeSpace = 0;
@@ -644,6 +686,7 @@ namespace PeterDB {
         free(page);
         return 0;
     }
+
     /*
      * Returns the start of data field address for given slot number
      * 1 for F, 1 for N, 2*SlotNum for each slot
@@ -756,9 +799,10 @@ namespace PeterDB {
         void * record = encoder(recordDescriptor, data, updatedRecordSize);
 
         updateMiscRecord(fileHandle, recordDescriptor, record, updatedRecordSize, rid);
+        return 0;
     }
 
-    RC RecordBasedFileManager::updateMiscRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, void *record, int updatedRecordSize, const RID &rid) {
+    RC RecordBasedFileManager::updateMiscRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, void *updated_record, int updatedRecordSize, const RID &rid) {
         int pageIndex = rid.pageNum;
         int slotNum = rid.slotNum;
         char* page = (char*)malloc(PAGE_SIZE);
@@ -774,7 +818,7 @@ namespace PeterDB {
         if(isTombStone(record_data_addr)){
             RID next_rid;
             tombStonePointerExtractor(next_rid, record_data_addr, page);
-            updateRecord(fileHandle, recordDescriptor, data, next_rid);
+            updateMiscRecord(fileHandle, recordDescriptor, updated_record, updatedRecordSize, next_rid);
         }
         bool is_internal = isInternalId(record_data_addr);
 
@@ -794,7 +838,7 @@ namespace PeterDB {
          */
         if(updatedRecordSize < record_old_len){
             //Add data
-            memcpy(page + record_data_addr, record, updatedRecordSize);
+            memcpy(page + record_data_addr, updated_record, updatedRecordSize);
             //Update length field
             memcpy(page + len_address, &updatedRecordSize, sizeof (unsigned ));
             //shift all other data to left
@@ -802,6 +846,7 @@ namespace PeterDB {
             //Update free space
             freeSpace = freeSpace + (record_old_len - updatedRecordSize);
             memcpy(page + PAGE_SIZE - sizeof (unsigned ), &freeSpace, sizeof (unsigned));
+            fileHandle.writePage(pageIndex, page);
         }else{
             /*
              * This is a trickier one. It has two cases.
@@ -812,12 +857,13 @@ namespace PeterDB {
             if(updatedRecordSize - record_old_len <= freeSpace){
                 shiftRecordsRight(page, numSlots, slotNum + 1, updatedRecordSize - record_old_len);
                 //Now add the record
-                memcpy(page + record_data_addr, record, updatedRecordSize);
+                memcpy(page + record_data_addr, updated_record, updatedRecordSize);
                 //Update length field
                 memcpy(page + len_address, &updatedRecordSize, sizeof (unsigned ));
                 //Update free space
                 freeSpace = freeSpace - (updatedRecordSize - record_old_len);
                 memcpy(page + PAGE_SIZE - sizeof (unsigned ), &freeSpace, sizeof (unsigned));
+                fileHandle.writePage(pageIndex, page);
             }else{
                 //The tricky case
 
@@ -833,9 +879,7 @@ namespace PeterDB {
                     original_rid.slotNum = slotNum;
                 }
                 RID insert_rid;
-                int updatedRecordSize = 0;
-                void * updated_record = encoder(recordDescriptor, data, updatedRecordSize);
-                //Add thr original RID values to this record
+                //Add the original RID values to this record
                 char* rid_added_updated_record = (char*)malloc(updatedRecordSize + 6*sizeof (char));
                 memset(rid_added_updated_record, 0, updatedRecordSize + 6*sizeof (char));
                 memcpy(rid_added_updated_record, updated_record, updatedRecordSize);
@@ -870,11 +914,25 @@ namespace PeterDB {
                 char* tombStoneData = (char*)malloc(tombStone_data_len);
                 memcpy(tombStoneData, &insert_pageNum, sizeof(unsigned ));
                 memcpy(tombStoneData + sizeof (unsigned ), &insert_slotNum, 2*sizeof (char));
+                updateMiscRecord(fileHandle, recordDescriptor, tombStoneData, 6*sizeof (char), rid);
+                /*
+                 * We need to remove the internal id flag if it was an internal id as now this will be a tombstone only
+                 * a. Internal id flag removal: no action as record_data_addr & ((1 << 17) - 1) took care of it
+                 * b. Add tombstone flag
+                 * Length field update was taken care of because it called updateMiscRecord*/
 
+                record_data_addr = record_data_addr |(1 << 31);
+                memcpy(page + data_start_address, &record_data_addr, sizeof (unsigned ));
+                fileHandle.writePage(pageIndex, page);
+                free(page);
+                free(tombStoneData);
+                //free(rid_added_updated_record);
 
             }
+
         }
 
+        return 0;
     }
 
     bool RecordBasedFileManager::isTombStone(int address){

@@ -157,6 +157,7 @@ namespace PeterDB {
         RC internalRecordExtractor(RID &real_rid, int addr, int len, char* page, char* record);
         RC insertMiscData(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,void *record, int recordSize, RID &rid);
         RC updateMiscRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, void *record, int updatedRecordSize, const RID &rid);
+        RC deleteGivenRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid);
     protected:
         RecordBasedFileManager();                                                   // Prevent construction
         ~RecordBasedFileManager();                                                  // Prevent unwanted destruction
