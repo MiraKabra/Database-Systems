@@ -3,7 +3,6 @@
 
 #include <string>
 #include <vector>
-
 #include "src/include/rbfm.h"
 
 namespace PeterDB {
@@ -36,6 +35,13 @@ namespace PeterDB {
     // Relation Manager
     class RelationManager {
     public:
+        static int tableCount;
+        std::string table = "Tables";
+        std::string column = "Columns";
+        std::string table_file = "Tables";
+        std::string column_file = "Columns";
+        FileHandle table_handle;
+        FileHandle column_handle;
         static RelationManager &instance();
 
         RC createCatalog();
@@ -90,6 +96,11 @@ namespace PeterDB {
                      bool highKeyInclusive,
                      RM_IndexScanIterator &rm_IndexScanIterator);
 
+    private:
+        RC createDataForTables_table(int table_id, std::string table_name,  int system, char* data);
+        RC createDataForColumns_table(int table_id, std::string column_name, int column_type, int column_length, int column_position, char* data);
+        std::vector<Attribute> getTableAttribute();
+        std::vector<Attribute> getColumnAttribute();
     protected:
         RelationManager();                                                  // Prevent construction
         ~RelationManager();                                                 // Prevent unwanted destruction

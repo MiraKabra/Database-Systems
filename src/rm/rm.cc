@@ -1,6 +1,7 @@
 #include "src/include/rm.h"
 
 namespace PeterDB {
+
     RelationManager &RelationManager::instance() {
         static RelationManager _relation_manager = RelationManager();
         return _relation_manager;
@@ -15,19 +16,231 @@ namespace PeterDB {
     RelationManager &RelationManager::operator=(const RelationManager &) = default;
 
     RC RelationManager::createCatalog() {
-        return -1;
+//        std::string table = "Tables";
+//        std::string column = "Columns";
+//        std::string table_file = "Tables";
+//        std::string column_file = "Columns";
+        tableCount = 0;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+
+        //Create the table file , return -1 if it already exists
+        if(rbfm.createFile(table_file) != 0) return -1;
+
+        //Create the column file , return -1 if it already exists
+        if(rbfm.createFile(column_file) != 0) return -1;
+
+        rbfm.openFile(table_file, table_handle);
+        rbfm.openFile(column_file, column_handle);
+        //Create entries for 'Tables' table
+        void* table_entry[2];
+
+        createDataForTables_table(1, "Tables", 1, (char*)table_entry[0]);
+        createDataForTables_table(2, "Columns", 1, (char*)table_entry[1]);
+
+        //Create entries for 'Columns' table
+        void* column_entry[9];
+
+        createDataForColumns_table(1, "table-id", TypeInt, 4, 1, (char *)column_entry[0]);
+        createDataForColumns_table(1, "table-name", TypeVarChar, 50, 2, (char *)column_entry[1]);
+        createDataForColumns_table(1, "file-name", TypeVarChar, 50, 3, (char *)column_entry[2]);
+        createDataForColumns_table(1, "system", TypeInt, 4, 4, (char *)column_entry[3]);
+        createDataForColumns_table(2, "table-id", TypeInt, 4, 1, (char *)column_entry[4]);
+        createDataForColumns_table(2, "column-name", TypeVarChar, 50, 2, (char *)column_entry[5]);
+        createDataForColumns_table(2, "column-type", TypeInt, 4, 3, (char *)column_entry[6]);
+        createDataForColumns_table(2, "column-length", TypeInt, 4, 4, (char *)column_entry[7]);
+        createDataForColumns_table(2, "column-position", TypeInt, 4, 5, (char *)column_entry[8]);
+
+        RID rid;
+        //Enter the "Tables" and "Columns" entries
+        for(int i = 0; i < 2; i++){
+            rbfm.insertRecord(table_handle, getTableAttribute(), table_entry[i], rid);
+            free(table_entry[i]);
+        }
+
+        for(int i = 0; i < 9; i++){
+            rbfm.insertRecord(column_handle, getColumnAttribute(), column_entry[i], rid);
+            free(column_entry[i]);
+        }
+        tableCount+=2;
+        return 0;
+    }
+
+    std::vector<Attribute> RelationManager::getTableAttribute(){
+        std::vector<Attribute> vector;
+        Attribute attr;
+        attr.name = "table-id";
+        attr.length = 4;
+        attr.type = TypeInt;
+        vector.push_back(attr);
+
+        attr.name = "table-name";
+        attr.length = 50;
+        attr.type = TypeVarChar;
+        vector.push_back(attr);
+
+        attr.name = "file-name";
+        attr.length = 50;
+        attr.type = TypeVarChar;
+        vector.push_back(attr);
+
+        attr.name = "system";
+        attr.length = 4;
+        attr.type = TypeInt;
+        vector.push_back(attr);
+        return vector;
+    }
+
+    std::vector<Attribute> RelationManager::getColumnAttribute(){
+        std::vector<Attribute> vector;
+        Attribute attr;
+        attr.name = "table-id";
+        attr.length = 4;
+        attr.type = TypeInt;
+        vector.push_back(attr);
+
+        attr.name = "column-name";
+        attr.length = 50;
+        attr.type = TypeVarChar;
+        vector.push_back(attr);
+
+        attr.name = "column-type";
+        attr.length = 4;
+        attr.type = TypeInt;
+        vector.push_back(attr);
+
+        attr.name = "column-length";
+        attr.length = 4;
+        attr.type = TypeInt;
+        vector.push_back(attr);
+
+        attr.name = "column-position";
+        attr.length = 4;
+        attr.type = TypeInt;
+        vector.push_back(attr);
+
+        return vector;
+    }
+
+    /*
+     * The columns are: table-id:int, table-name:varchar(50), file-name:varchar(50), system:int
+     * table-name and file-name are same
+     * The system field is used to represent boolean. 1 means the table is
+     * system table and user can only do read operation here, no modification
+     * The first entry will be: (1, "Tables", "Tables", 1)
+     * The second entry will be: (2, "Columns", "Columns", 1)
+     * */
+    RC RelationManager::createDataForTables_table(int table_id, std::string table_name, int system, char* data){
+        // 1 byte for bitmap (11110000)
+        // 2*4 bytes for storing length(n) of varchar
+        // 2*n bytes for storing the varchar
+        //2*4 bytes for storing two ints
+        int len = table_name.length();
+        char bitmap = char(240); //corresponds to 11110000 bitmap
+        const char* table_name_cstr = table_name.c_str();
+        data = (char *)malloc(sizeof (char) + 2*sizeof (unsigned ) + 2*len + 2*sizeof (unsigned ));
+        int offset = 0;
+        memcpy(data+offset, &bitmap, sizeof (char));
+        //Increase offset by 1
+        offset += sizeof (char);
+        //Store table-id
+        memcpy(data+offset, &table_id, sizeof (unsigned ));
+        //Increase offset by 4
+        offset += sizeof (unsigned );
+        //Store varchar length in next 4 byte
+        memcpy(data + offset, &len, sizeof (unsigned ));
+        //Increase offset by 4
+        offset += sizeof (unsigned );
+        //Store table-name in next 'len' bytes
+        memcpy(data+offset, table_name_cstr, len);
+        //Increase offset by 'len'
+        offset += len;
+        //Store varchar length in next 4 byte
+        memcpy(data + offset, &len, sizeof (unsigned ));
+        //Increase offset by 4
+        offset += sizeof (unsigned );
+        //Store file-name in next 'len' bytes
+        memcpy(data+offset, table_name_cstr, len);
+        //Increase offset by 'len'
+        offset += len;
+        //Store system value (bool : 1 or 0) in next 4 bytes
+        memcpy(data+offset, &system, sizeof (unsigned ));
+
+        return 0;
+    }
+    /*The columns are: table-id:int, column-name:varchar(50), column-type:int, column-length:int, column-position:int
+     * first entry: (1, "table-id", TypeInt, 4 , 1)
+     * second entry: (1, "table-name", TypeVarChar, 50, 2)
+     * third entry: (1, "file-name", TypeVarChar, 50, 3)
+     * fourth entry: (2, "table-id", TypeInt, 4, 1)
+     * fifth entry: (2, "column-name",  TypeVarChar, 50, 2)
+(2, "column-type", TypeInt, 4, 3)
+     * sixth entry: (2, "column-type", TypeInt, 4, 3)
+     * seventh entry: (2, "column-length", TypeInt, 4, 4)
+     * eighth entry: (2, "column-position", TypeInt, 4, 5)
+     * */
+    RC RelationManager::createDataForColumns_table(int table_id, std::string column_name, int column_type, int column_length, int column_position, char* data){
+        int len = column_name.length();
+        char bitmap = char(240); //corresponds to 11110000 bitmap
+        const char* column_name_cstr = column_name.c_str();
+        data = (char*) malloc(sizeof (char) + sizeof (unsigned) + len + 4*sizeof (unsigned ));
+        int offset = 0;
+        memcpy(data+offset, &bitmap, sizeof (char ));
+        offset += sizeof (char );
+        memcpy(data+offset, &table_id, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+        memcpy(data+offset, &len, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+        memcpy(data+offset, column_name_cstr, len);
+        offset += len;
+        memcpy(data+offset, &column_type, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+        memcpy(data+offset, &column_length, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+        memcpy(data+offset, &column_position, sizeof (unsigned ));
+
+        return 0;
     }
 
     RC RelationManager::deleteCatalog() {
-        return -1;
+
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        if(rbfm.destroyFile(table_file) != 0) return -1;
+        if(rbfm.destroyFile(column_file) !=0) return -1;
+        tableCount = 0;
+        return 0;
     }
 
     RC RelationManager::createTable(const std::string &tableName, const std::vector<Attribute> &attrs) {
-        return -1;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        //Create a file for this table, return -1 if it already exists
+        if(rbfm.createFile(tableName) != 0) return -1;
+        tableCount++;
+        RID rid;
+        //Insert data in 'Tables' table
+        void* data_for_tables_table;
+        createDataForTables_table(tableCount, tableName, 0, (char*)data_for_tables_table);
+        rbfm.insertRecord(table_handle, getTableAttribute(), data_for_tables_table, rid);
+        free(data_for_tables_table);
+        //Insert data in 'Columns' table
+        for(int i = 0; i < attrs.size(); i++){
+            void* data;
+            Attribute attr = attrs.at(i);
+            createDataForColumns_table(tableCount, attr.name, attr.type, attr.length, i+1, (char*)data);
+            rbfm.insertRecord(column_handle, getColumnAttribute(), data, rid);
+            free(data);
+        }
+        return 0;
     }
 
+
     RC RelationManager::deleteTable(const std::string &tableName) {
-        return -1;
+
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        //Delete the file. Return -1 if error occurred
+        if(rbfm.destroyFile(tableName) != 0) return -1;
+        //Find the table id and rid for deleting this table
+
+        return 0;
     }
 
     RC RelationManager::getAttributes(const std::string &tableName, std::vector<Attribute> &attrs) {

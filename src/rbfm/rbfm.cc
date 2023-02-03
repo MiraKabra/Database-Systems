@@ -961,7 +961,67 @@ namespace PeterDB {
     }
     RC RecordBasedFileManager::readAttribute(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                              const RID &rid, const std::string &attributeName, void *data) {
-        return -1;
+        void* data_record;
+        //Read the record given by rid
+        readRecord(fileHandle, recordDescriptor, rid, data_record);
+        int numberOfCols = recordDescriptor.size();
+        int bitMapSize = ceil((float)numberOfCols/8);
+
+        std::vector<bool> nullIndicator;
+        for(int k = 0; k < numberOfCols; k++){
+            bool isNull = isColValueNull(data, k);
+            nullIndicator.push_back(isNull);
+            if(isNull) continue;
+        }
+        bool is_null = false;
+        int index_of_asked_attribute;
+
+        //check if the asked attributeName value is null
+        for(int i = 0; i < numberOfCols; i++){
+            Attribute attr = recordDescriptor.at(i);
+            if(strcmp(attr.name.c_str(), attributeName.c_str()) == 0){
+                index_of_asked_attribute = i;
+                if(isColValueNull(data_record, i)){
+                    is_null = true;
+                }
+                break;
+            }
+        }
+        if(is_null){
+            data = malloc(sizeof (char));
+            memset(data, 0, sizeof (char));
+            //attribute is null
+            char bitmap = char(128);
+            memcpy(data, &bitmap, sizeof (char));
+            return -1;
+        }
+        //the attribute value is not null
+        char* pointer = (char*)data_record;
+        int offset = bitMapSize;
+
+        for(int j = 0; j <= index_of_asked_attribute; j++){
+            if(j == index_of_asked_attribute) break;
+            if(recordDescriptor.at(j).type != TypeVarChar){
+                offset += sizeof (unsigned );
+            }else{
+                int len = *(int *)(pointer + offset);
+                offset += sizeof (unsigned);
+                offset += len;
+            }
+        }
+        if(recordDescriptor.at(index_of_asked_attribute).type != TypeVarChar){
+            data = malloc(sizeof (char ) + sizeof (unsigned ));
+            memset(data, 0, sizeof (char ) + sizeof (unsigned ));
+            memcpy((char*)data + sizeof (char), (char*) pointer + offset, sizeof (unsigned ));
+        }else{
+            int len_of_data = *(int*)(pointer + offset);
+            offset += sizeof (unsigned );
+            data = malloc(sizeof (char) + sizeof (unsigned ) + len_of_data);
+            memset(data, 0, sizeof (char) + sizeof (unsigned ) + len_of_data);
+            memcpy((char*)data + sizeof (char), &len_of_data, sizeof (unsigned ));
+            memcpy((char*)data + sizeof (char) + sizeof (unsigned ), (char*)pointer + offset, len_of_data);
+        }
+        return 0;
     }
 
     RC RecordBasedFileManager::scan(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
