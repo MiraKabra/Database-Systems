@@ -76,6 +76,16 @@ namespace PeterDB {
         CompOp compOp;
         std::vector<std::string> attributeNames;
         const void *value;
+
+        bool is_record_satisfiable(FileHandle &fileHandle,
+                                   const std::vector<Attribute> &recordDescriptor,
+                                   const RID &rid, const std::string &conditionAttribute,
+                                   const CompOp compOp, const void *value);
+        RC create_data_with_required_attributes(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid,
+                                       const std::vector<std::string> &attributeNames, void *data);
+        int get_sizeof_required_attributes_data(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
+                                             const RID &rid, const std::vector<std::string> &attributeNames, void* bitmap);
+        AttrType get_attribute_type(std::string attributeName, const std::vector<Attribute> &recordDescriptor);
     };
 
     class RecordBasedFileManager {

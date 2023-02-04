@@ -1029,12 +1029,7 @@ namespace PeterDB {
                                     const std::vector<std::string> &attributeNames,
                                     RBFM_ScanIterator &rbfm_ScanIterator) {
 
-        rbfm_ScanIterator.setScanner(fileHandle, recordDescriptor, conditionAttribute, compOp, value);
-        RID rid;
-        void* data;
-        while(rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
-
-        }
+        rbfm_ScanIterator.setScanner(fileHandle, recordDescriptor, conditionAttribute, compOp, value, attributeNames);
         return 0;
     }
     //have not taken care of tombstone yet
@@ -1046,7 +1041,7 @@ namespace PeterDB {
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         int totalSlots = 0;
         memcpy(&totalSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
-        void* record_data;
+
         if(currSlotNum > totalSlots){
             currPageIndex++;
             if(currPageIndex + 1 > totalPages){
@@ -1056,16 +1051,104 @@ namespace PeterDB {
             fileHandle.readPage(currPageIndex, page);
             rid.pageNum = currPageIndex;
             rid.slotNum = currSlotNum;
-            rbfm.readRecord(fileHandle, recordDescriptor, rid, record_data);
         }else{
             rid.pageNum = currPageIndex;
             rid.slotNum = currSlotNum;
-            rbfm.readRecord(fileHandle, recordDescriptor, rid, record_data);
+        }
+        bool meets_condition = is_record_satisfiable(fileHandle, recordDescriptor, rid, conditionAttribute, compOp, value);
+        if(meets_condition){
+            create_data_with_required_attributes(fileHandle, recordDescriptor, rid, attributeNames, data);
+        }else{
+            int rc = getNextRecord(rid, data);
+            if(rc == RBFM_EOF) return RBFM_EOF;
         }
         return 0;
     }
 
-    bool is_record_satisfiable(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid, const std::string &conditionAttribute, const CompOp compOp, const void *value){
+    RC RBFM_ScanIterator::create_data_with_required_attributes(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid, const std::vector<std::string> &attributeNames, void *data){
+
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+
+        int numberOfCols = attributeNames.size();
+        int bitMapSize = ceil((float)numberOfCols/8);
+        void* bitmap;
+        int result = get_sizeof_required_attributes_data(fileHandle, recordDescriptor, rid, attributeNames, bitmap);
+
+        int totalSize = bitMapSize + result;
+        data = malloc(totalSize);
+        int offset = 0;
+        //copy bitmap
+        memcpy((char*)data + offset, bitmap, bitMapSize);
+
+        offset += bitMapSize;
+        for(int k = 0; k < attributeNames.size(); k++){
+            std::string attributeName = attributeNames.at(k);
+            AttrType type = get_attribute_type(attributeName, recordDescriptor);
+            void* read_attr;
+            int rc = rbfm.readAttribute(fileHandle, recordDescriptor, rid, attributeName, read_attr);
+            if(rc == -1){
+                continue;
+            }
+            if(type == TypeInt || type == TypeReal){
+                memcpy((char*)data + offset, (char*)read_attr + sizeof (char), sizeof (unsigned ));
+                offset += sizeof (unsigned );
+            }else{
+                int len = *(int*)((char*)read_attr + sizeof (char));
+                memcpy((char*)data + offset, (char*)read_attr + sizeof (char), sizeof (unsigned ) + len);
+                offset += sizeof (unsigned ) + len;
+            }
+        }
+        return 0;
+    }
+
+    int RBFM_ScanIterator::get_sizeof_required_attributes_data(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid, const std::vector<std::string> &attributeNames, void* bitmap){
+
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int result = 0;
+        int numberOfCols = attributeNames.size();
+        int bitMapSize = ceil((float)numberOfCols/8);
+        result += bitMapSize;
+        int bitmapVal = 0;
+        bitmap = malloc(bitMapSize*sizeof (char));
+        memset(bitmap, 0, bitMapSize*sizeof (char));
+        int shift = bitMapSize*8 - 1;
+        for(int k = 0; k < attributeNames.size(); k++){
+            std::string attributeName = attributeNames.at(k);
+            AttrType type = get_attribute_type(attributeName, recordDescriptor);
+            void* read_attr;
+            int rc = rbfm.readAttribute(fileHandle, recordDescriptor, rid, attributeName, read_attr);
+            if(rc == -1){
+                int mask = (1 << shift);
+                bitmapVal = bitmapVal | mask;
+                continue;
+            }
+            if(type == TypeInt || type == TypeReal){
+                result += sizeof (unsigned );
+            }else{
+                int len = *(int*)((char*)read_attr + sizeof (char ));
+                result += sizeof (unsigned ) + len;
+            }
+            if(k == attributeNames.size() - 1){
+                free(read_attr);
+            }
+        }
+        char* pointer = (char*)&bitmapVal;
+        memcpy(bitmap, pointer + sizeof (unsigned )- bitMapSize, bitMapSize);
+        return result;
+
+    }
+
+    AttrType RBFM_ScanIterator::get_attribute_type(std::string attributeName, const std::vector<Attribute> &recordDescriptor){
+
+        for(int k = 0; k < recordDescriptor.size(); k++){
+            Attribute attr = recordDescriptor.at(k);
+            if(strcmp(attr.name.c_str(), attributeName.c_str()) == 0) return attr.type;
+        }
+        //random return just because we should return an Attrtype
+        return TypeInt;
+    }
+
+    bool RBFM_ScanIterator::is_record_satisfiable(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid, const std::string &conditionAttribute, const CompOp compOp, const void *value){
         if(compOp == NO_OP) return true;
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         void* read_attr;
