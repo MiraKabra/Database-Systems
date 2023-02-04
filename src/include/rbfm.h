@@ -153,6 +153,7 @@ namespace PeterDB {
                 const void *value,                    // used in the comparison
                 const std::vector<std::string> &attributeNames, // a list of projected attributes
                 RBFM_ScanIterator &rbfm_ScanIterator);
+        bool is_slot_a_tombstone(int slotnum, void* page);
 
 
     private:

@@ -935,6 +935,11 @@ namespace PeterDB {
         return 0;
     }
 
+    bool RecordBasedFileManager::is_slot_a_tombstone(int slotnum, void* page){
+        int addr = *(int*)((char*)page + getStartAddressOffset(slotnum));
+        return isTombStone(addr);
+    }
+
     bool RecordBasedFileManager::isTombStone(int address){
         if((address & (1 << 31)) == 0) return false;
         return true;
@@ -1049,12 +1054,20 @@ namespace PeterDB {
             }
             currSlotNum = 1;
             fileHandle.readPage(currPageIndex, page);
+
             rid.pageNum = currPageIndex;
             rid.slotNum = currSlotNum;
         }else{
             rid.pageNum = currPageIndex;
             rid.slotNum = currSlotNum;
         }
+        bool is_tombstone = rbfm.is_slot_a_tombstone(rid.slotNum, page);
+        //If it's a tombstone, don't read it and move forward
+        if(is_tombstone){
+            int rc = getNextRecord(rid, data);
+            if(rc == RBFM_EOF) return RBFM_EOF;
+        }
+
         bool meets_condition = is_record_satisfiable(fileHandle, recordDescriptor, rid, conditionAttribute, compOp, value);
         if(meets_condition){
             create_data_with_required_attributes(fileHandle, recordDescriptor, rid, attributeNames, data);
