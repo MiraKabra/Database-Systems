@@ -1,7 +1,7 @@
 #include "src/include/rm.h"
 
 namespace PeterDB {
-
+    int RelationManager::tableCount;
     RelationManager &RelationManager::instance() {
         static RelationManager _relation_manager = RelationManager();
         return _relation_manager;
@@ -20,7 +20,7 @@ namespace PeterDB {
 //        std::string column = "Columns";
 //        std::string table_file = "Tables";
 //        std::string column_file = "Columns";
-        tableCount = 0;
+        RelationManager::tableCount = 0;
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
 
         //Create the table file , return -1 if it already exists
@@ -61,7 +61,7 @@ namespace PeterDB {
             rbfm.insertRecord(column_handle, getColumnAttribute(), column_entry[i], rid);
             free(column_entry[i]);
         }
-        tableCount+=2;
+        RelationManager::tableCount+=2;
         return 0;
     }
 
@@ -206,7 +206,7 @@ namespace PeterDB {
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         if(rbfm.destroyFile(table_file) != 0) return -1;
         if(rbfm.destroyFile(column_file) !=0) return -1;
-        tableCount = 0;
+        RelationManager::tableCount = 0;
         return 0;
     }
 
@@ -214,18 +214,18 @@ namespace PeterDB {
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         //Create a file for this table, return -1 if it already exists
         if(rbfm.createFile(tableName) != 0) return -1;
-        tableCount++;
+        RelationManager::tableCount++;
         RID rid;
         //Insert data in 'Tables' table
         void* data_for_tables_table;
-        createDataForTables_table(tableCount, tableName, 0, (char*)data_for_tables_table);
+        createDataForTables_table(RelationManager::tableCount, tableName, 0, (char*)data_for_tables_table);
         rbfm.insertRecord(table_handle, getTableAttribute(), data_for_tables_table, rid);
         free(data_for_tables_table);
         //Insert data in 'Columns' table
         for(int i = 0; i < attrs.size(); i++){
             void* data;
             Attribute attr = attrs.at(i);
-            createDataForColumns_table(tableCount, attr.name, attr.type, attr.length, i+1, (char*)data);
+            createDataForColumns_table(RelationManager::tableCount, attr.name, attr.type, attr.length, i+1, (char*)data);
             rbfm.insertRecord(column_handle, getColumnAttribute(), data, rid);
             free(data);
         }
