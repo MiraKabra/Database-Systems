@@ -19,6 +19,8 @@ namespace PeterDB {
         RC getNextTuple(RID &rid, void *data);
 
         RC close();
+    private:
+        RBFM_ScanIterator rbfm_ScanIterator;
     };
 
     // RM_IndexScanIterator is an iterator to go through index entries
@@ -30,6 +32,7 @@ namespace PeterDB {
         // "key" follows the same format as in IndexManager::insertEntry()
         RC getNextEntry(RID &rid, void *key);    // Get next matching entry
         RC close();                              // Terminate index scan
+
     };
 
     // Relation Manager
@@ -101,6 +104,8 @@ namespace PeterDB {
         RC createDataForColumns_table(int table_id, std::string column_name, int column_type, int column_length, int column_position, char* data);
         std::vector<Attribute> getTableAttribute();
         std::vector<Attribute> getColumnAttribute();
+        RC prepare_value_for_varchar(const std::string &str, void* value);
+        RC prepare_value_for_int(int num, void* value);
     protected:
         RelationManager();                                                  // Prevent construction
         ~RelationManager();                                                 // Prevent unwanted destruction

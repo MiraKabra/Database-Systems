@@ -236,10 +236,56 @@ namespace PeterDB {
     RC RelationManager::deleteTable(const std::string &tableName) {
 
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        RBFM_ScanIterator rbfm_ScanIterator;
         //Delete the file. Return -1 if error occurred
         if(rbfm.destroyFile(tableName) != 0) return -1;
         //Find the table id and rid for deleting this table
+        std::vector<std::string> attributeNames_table;
+        attributeNames_table.push_back("table-id");
+        void* value;
+        prepare_value_for_varchar(tableName, value);
+        rbfm.scan(table_handle, getTableAttribute(), "table-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator);
+        RID rid;
+        void* data;
+        bool found = false;
+        int table_id;
+        while (rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
+            found = true;
+            //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
+            table_id = *(int*)((char*)data + sizeof (unsigned ));
+            break;
+        }
+        if(!found){
+            //No table entry was found in the catalog
+            return -1;
+        }
+        //Found the table-id
+        //Delete this record from 'tables' table
+        rbfm.deleteRecord(table_handle, getTableAttribute(), rid);
+        rbfm_ScanIterator.close();
+        free(value);
+        //Now find the entries with this table-id in 'columns' table one by one and delete them
+        std::vector<std::string> attributeNames_column;
+        attributeNames_column.push_back("table-id");
+        rbfm.scan(column_handle, getColumnAttribute(), "table-id", EQ_OP, &table_id, attributeNames_column, rbfm_ScanIterator);
+        found = false;
+        while (rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
+            found = true;
+            rbfm.deleteRecord(column_handle, getColumnAttribute(), rid);
+        }
+        rbfm_ScanIterator.close();
+        free(data);
 
+        return 0;
+    }
+    RC RelationManager::prepare_value_for_varchar(const std::string &str, void* value){
+        int len = str.length();
+        const char* str_cstr = str.c_str();
+        value = malloc(sizeof (unsigned ) + len);
+        int offset = 0;
+        memcpy((char*)value + offset, &len, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+        memcpy((char*)value + offset, str_cstr, len);
         return 0;
     }
 
@@ -278,14 +324,21 @@ namespace PeterDB {
                              const void *value,
                              const std::vector<std::string> &attributeNames,
                              RM_ScanIterator &rm_ScanIterator) {
-        return -1;
+
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+
+
+        return 0;
     }
 
     RM_ScanIterator::RM_ScanIterator() = default;
 
     RM_ScanIterator::~RM_ScanIterator() = default;
 
-    RC RM_ScanIterator::getNextTuple(RID &rid, void *data) { return RM_EOF; }
+    RC RM_ScanIterator::getNextTuple(RID &rid, void *data) {
+
+        return RM_EOF;
+    }
 
     RC RM_ScanIterator::close() { return -1; }
 
