@@ -65,7 +65,7 @@ namespace PeterDB {
 
         RC close();
         RC setScanner(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const std::string &conditionAttribute
-                , const CompOp compOp, const void *value);
+                , const CompOp compOp, const void *value, std::vector<std::string> attributeNames);
     private:
         int currPageIndex;
         int currSlotNum;
@@ -74,6 +74,7 @@ namespace PeterDB {
         std::vector<Attribute> recordDescriptor;
         std::string conditionAttribute;
         CompOp compOp;
+        std::vector<std::string> attributeNames;
         const void *value;
     };
 
