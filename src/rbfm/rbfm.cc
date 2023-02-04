@@ -1023,12 +1023,65 @@ namespace PeterDB {
         }
         return 0;
     }
-
+    //Returns an iterator called rbfm_ScanIterator
     RC RecordBasedFileManager::scan(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                     const std::string &conditionAttribute, const CompOp compOp, const void *value,
                                     const std::vector<std::string> &attributeNames,
                                     RBFM_ScanIterator &rbfm_ScanIterator) {
-        return -1;
+
+        rbfm_ScanIterator.setScanner(fileHandle, recordDescriptor, conditionAttribute, compOp, value);
+        RID rid;
+        void* data;
+        while(rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
+
+        }
+        return 0;
+    }
+
+    RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data) {
+
+        int totalPages = fileHandle.getNumberOfPages();
+        if(totalPages == 0) return RBFM_EOF;
+        currSlotNum++;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int totalSlots = 0;
+        memcpy(&totalSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
+        if(currSlotNum > totalSlots){
+            currPageIndex++;
+            if(currPageIndex + 1 > totalPages){
+                return RBFM_EOF;
+            }
+            currSlotNum = 1;
+            fileHandle.readPage(currPageIndex, page);
+            rid.pageNum = currPageIndex;
+            rid.slotNum = currSlotNum;
+            rbfm.readRecord(fileHandle, recordDescriptor, rid, data);
+        }else{
+            rid.pageNum = currPageIndex;
+            rid.slotNum = currSlotNum;
+            rbfm.readRecord(fileHandle, recordDescriptor, rid, data);
+        }
+        return 0;
+    }
+
+    RC RBFM_ScanIterator::close() {
+        free(page);
+        return 0;
+    }
+    RC RBFM_ScanIterator::setScanner(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const std::string &conditionAttribute
+            , const CompOp compOp, const void *value){
+        this->fileHandle = fileHandle;
+        this->recordDescriptor = recordDescriptor;
+        this->compOp = compOp;
+        this->value = value;
+        this->currPageIndex = -1;
+        this->currSlotNum = 0;
+        this->page = (char*)malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
+        if(fileHandle.getNumberOfPages() != 0){
+            currPageIndex++;
+            fileHandle.readPage(currPageIndex, page);
+        }
     }
 
 } // namespace PeterDB

@@ -61,9 +61,20 @@ namespace PeterDB {
         // Never keep the results in the memory. When getNextRecord() is called,
         // a satisfying record needs to be fetched from the file.
         // "data" follows the same format as RecordBasedFileManager::insertRecord().
-        RC getNextRecord(RID &rid, void *data) { return RBFM_EOF; };
+        RC getNextRecord(RID &rid, void *data);
 
-        RC close() { return -1; };
+        RC close();
+        RC setScanner(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const std::string &conditionAttribute
+                , const CompOp compOp, const void *value);
+    private:
+        int currPageIndex;
+        int currSlotNum;
+        char* page;
+        FileHandle fileHandle;
+        std::vector<Attribute> recordDescriptor;
+        std::string conditionAttribute;
+        CompOp compOp;
+        const void *value;
     };
 
     class RecordBasedFileManager {
