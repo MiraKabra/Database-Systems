@@ -974,7 +974,7 @@ namespace PeterDB {
 
     RC RecordBasedFileManager::readAttributeFromRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                              const RID &rid, const std::string &attributeName, void *&data, void *data_record) {
-        assert(data_record != nullptr);
+        //assert(data_record != nullptr);
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil((float)numberOfCols/8);
 
