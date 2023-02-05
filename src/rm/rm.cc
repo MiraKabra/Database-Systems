@@ -489,7 +489,18 @@ namespace PeterDB {
 
     RC RelationManager::readAttribute(const std::string &tableName, const RID &rid, const std::string &attributeName,
                                       void *data) {
-        return -1;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+
+        FileHandle curr_file_handle;
+        //Return error if file does not exist
+        if(rbfm.openFile(tableName, curr_file_handle) != 0) return -1;
+
+        std::vector<Attribute> recordDescriptor;
+        getAttributes(tableName, recordDescriptor);
+
+        int rc = rbfm.readAttribute(curr_file_handle, recordDescriptor, rid, attributeName, data);
+        rbfm.closeFile(curr_file_handle);
+        return rc;
     }
 
     RC RelationManager::scan(const std::string &tableName,
