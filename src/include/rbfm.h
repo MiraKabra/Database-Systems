@@ -152,9 +152,9 @@ namespace PeterDB {
         bool is_slot_a_tombstone(int slotnum, void* page);
         RC readAttributeFromRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                    const RID &rid, const std::string &attributeName, void *&data, void *data_record);
-
-    private:
         bool isColValueNull(const void *data, int k);
+    private:
+
         int calculateRecordSize(int N, const std::vector<Attribute> &recordDescriptor, const void *data, const std::vector<bool> &nullIndicator);
         void* encoder(const std::vector<Attribute> &recordDescriptor, const void *data, int& getRecordSize);
         RC copyInputToRecord(void* record, const void *data, const std::vector<Attribute> &recordDescriptor, const std::vector<bool> &nullIndicator, int N);

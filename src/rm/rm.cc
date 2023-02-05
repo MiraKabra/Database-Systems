@@ -1,5 +1,7 @@
 #include "src/include/rm.h"
 #include <cstring>
+#include <cmath>
+#include <iostream>
 
 namespace PeterDB {
     int RelationManager::tableCount;
@@ -348,23 +350,141 @@ namespace PeterDB {
     }
 
     RC RelationManager::insertTuple(const std::string &tableName, const void *data, RID &rid) {
-        return -1;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        FileHandle curr_file_handle;
+        //Return error if file does not exist
+        if(rbfm.openFile(tableName, curr_file_handle) != 0) return -1;
+        std::vector<Attribute> recordDescriptor;
+        getAttributes(tableName, recordDescriptor);
+        rbfm.insertRecord(curr_file_handle, recordDescriptor, data, rid);
+        rbfm.closeFile(curr_file_handle);
+        return 0;
     }
 
     RC RelationManager::deleteTuple(const std::string &tableName, const RID &rid) {
-        return -1;
+
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        FileHandle curr_file_handle;
+        //Return error if file does not exist
+        if(rbfm.openFile(tableName, curr_file_handle) != 0) return -1;
+
+        std::vector<Attribute> recordDescriptor;
+        getAttributes(tableName, recordDescriptor);
+        rbfm.deleteRecord(curr_file_handle, recordDescriptor, rid);
+        rbfm.closeFile(curr_file_handle);
+
+        return 0;
     }
 
     RC RelationManager::updateTuple(const std::string &tableName, const void *data, const RID &rid) {
-        return -1;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        FileHandle curr_file_handle;
+        //Return error if file does not exist
+        if(rbfm.openFile(tableName, curr_file_handle) != 0) return -1;
+
+        std::vector<Attribute> recordDescriptor;
+        getAttributes(tableName, recordDescriptor);
+        rbfm.updateRecord(curr_file_handle, recordDescriptor, data, rid);
+        rbfm.closeFile(curr_file_handle);
+        return 0;
     }
 
     RC RelationManager::readTuple(const std::string &tableName, const RID &rid, void *data) {
-        return -1;
+        //data = nullptr;
+
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        FileHandle curr_file_handle;
+        //Return error if file does not exist
+        if(rbfm.openFile(tableName, curr_file_handle) != 0) return -1;
+        std::vector<Attribute> recordDescriptor;
+        getAttributes(tableName, recordDescriptor);
+
+        int rc = rbfm.readRecord(curr_file_handle, recordDescriptor, rid, data);
+        rbfm.closeFile(curr_file_handle);
+
+        return rc;
     }
 
     RC RelationManager::printTuple(const std::vector<Attribute> &attrs, const void *data, std::ostream &out) {
-        return -1;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int numberOfCols = attrs.size();
+        int bitMapSize = ceil((float)numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
+        char* pointer = (char *)data;
+
+        int N = 0;
+        std::vector<bool> nullIndicator;
+
+        for(int k = 0; k < numberOfCols; k++){
+            bool isNull = rbfm.isColValueNull(data, k);
+            nullIndicator.push_back(isNull);
+            if(isNull) continue;
+            N++; //Increase N for non null value
+        }
+        pointer = pointer + bitMapSize;
+        int offset = bitMapSize;
+//        std::string str = "";
+        //<AttributeName1>:\s<Value1>,\s<AttributeName2>:\s<Value2>,\s<AttributeName3>:\s<Value3>\n
+        for(int k = 0; k < numberOfCols; k++){
+            Attribute attr = attrs.at(k);
+            bool isNull = nullIndicator.at(k);
+//            str.append(attr.name);
+//            str.append(": ");
+            out << attr.name << ": ";
+            if(isNull) {
+//                str.append("NULL");
+                out << "NULL";
+                if(k < numberOfCols - 1) {
+//                    str.append(", ");
+                    out << ", ";
+                }
+                continue;
+            }
+            if(attr.type == TypeVarChar){
+                int len = *(int *)pointer; //Next 4 byte gives length
+                //The length info was stored in 4 byte. So, increase the pointer by 4 bytes
+                //After this pointer points to value of varchar
+                pointer += sizeof(int);
+                offset += sizeof(int);
+                if(len > 0) {
+                    char array[len + 1];
+                    memcpy(array, pointer, len * sizeof(char));
+                    pointer += len * sizeof(char);
+                    offset += len * sizeof(char);
+                    array[len] = '\0';
+//                str += array;
+//                str.append(array);
+                    out << array;
+                }
+            } else if(attr.type == TypeInt){
+//                int val = *(int*) pointer;
+                int val;
+                memcpy(&val, pointer, sizeof(int));
+//                str += std::to_string(val);
+//                str.append(std::to_string(val));
+                out << val;
+                pointer += sizeof(int);
+                offset += sizeof(int);
+            } else {
+//                float val = *(float*)pointer;
+                float val;
+                memcpy(&val, pointer, sizeof(float));
+//                str += std::to_string(val);
+//                str.append(std::to_string(val));
+                out << val;
+                pointer += sizeof(float);
+                offset += sizeof(float);
+            }
+            if(k < numberOfCols) {
+//                str.append(", ");
+                out << ", ";
+            } else {
+//                str.append("\n");
+                out << "\n";
+            }
+        }
+//        out << str;
+//        out.write((char *)&str, sizeof(str));
+        return 0;
     }
 
     RC RelationManager::readAttribute(const std::string &tableName, const RID &rid, const std::string &attributeName,
