@@ -326,12 +326,14 @@ namespace PeterDB {
             int offset = sizeof(char);
             int col_name_len = *(int*)((char*) data + offset);
             offset += sizeof (unsigned );
-            const char* col_name_ptr = (char*)malloc(col_name_len);
-            memcpy((void*)col_name_ptr, (char*)data + offset, col_name_len);
+            char array[col_name_len + 1];
+            //const char* col_name_ptr = (char*)malloc(col_name_len);
+            //memcpy((void*)col_name_ptr, (char*)data + offset, col_name_len);
+            memcpy(array, (char*)data + offset, col_name_len);
+            array[col_name_len] = '\0';
             //Store attribute name
-            std::string column_name = col_name_ptr;
-            //Free the pointer and increase offset
-            free((void*)col_name_ptr);
+            std::string column_name = array;
+            //increase offset
             offset += col_name_len;
             AttrType column_type = (AttrType)(*(int*)((char*)data + offset));
             offset += sizeof (unsigned );
