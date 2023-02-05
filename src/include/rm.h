@@ -105,8 +105,7 @@ namespace PeterDB {
         RC createDataForColumns_table(int table_id, std::string column_name, int column_type, int column_length, int column_position, void* &data);
         std::vector<Attribute> getTableAttribute();
         std::vector<Attribute> getColumnAttribute();
-        RC prepare_value_for_varchar(const std::string &str, void* value);
-        RC prepare_value_for_int(int num, void* value);
+        RC prepare_value_for_varchar(const std::string &str, void* &value);
     protected:
         RelationManager();                                                  // Prevent construction
         ~RelationManager();                                                 // Prevent unwanted destruction

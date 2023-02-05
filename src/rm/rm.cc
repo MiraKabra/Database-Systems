@@ -67,59 +67,70 @@ namespace PeterDB {
     }
 
     std::vector<Attribute> RelationManager::getTableAttribute(){
-        std::vector<Attribute> vector;
-        Attribute attr;
-        attr.name = "table-id";
-        attr.length = 4;
-        attr.type = TypeInt;
-        vector.push_back(attr);
+        std::vector<Attribute> v;
+        v.push_back({"table-id", TypeInt, 4});
+        v.push_back({"table-name", TypeVarChar, 50});
+        v.push_back({"file-name", TypeVarChar, 50});
+        v.push_back({"system", TypeInt, 4});
 
-        attr.name = "table-name";
-        attr.length = 50;
-        attr.type = TypeVarChar;
-        vector.push_back(attr);
-
-        attr.name = "file-name";
-        attr.length = 50;
-        attr.type = TypeVarChar;
-        vector.push_back(attr);
-
-        attr.name = "system";
-        attr.length = 4;
-        attr.type = TypeInt;
-        vector.push_back(attr);
-        return vector;
+//        Attribute attr;
+//        attr.name = "table-id";
+//        attr.length = 4;
+//        attr.type = TypeInt;
+//        v.push_back(attr);
+//
+//        attr.name = "table-name";
+//        attr.length = 50;
+//        attr.type = TypeVarChar;
+//        v.push_back(attr);
+//
+//        attr.name = "file-name";
+//        attr.length = 50;
+//        attr.type = TypeVarChar;
+//        v.push_back(attr);
+//
+//        attr.name = "system";
+//        attr.length = 4;
+//        attr.type = TypeInt;
+//        v.push_back(attr);
+        return v;
     }
 
     std::vector<Attribute> RelationManager::getColumnAttribute(){
-        std::vector<Attribute> vector;
-        Attribute attr;
-        attr.name = "table-id";
-        attr.length = 4;
-        attr.type = TypeInt;
-        vector.push_back(attr);
+        std::vector<Attribute> v;
+        v.push_back({"table-id", TypeInt, 4});
+        v.push_back({"column-name", TypeVarChar, 50});
+        v.push_back({"column-type", TypeInt, 4});
+        v.push_back({"column-length", TypeInt, 4});
+        v.push_back({"column-position", TypeInt, 4});
 
-        attr.name = "column-name";
-        attr.length = 50;
-        attr.type = TypeVarChar;
-        vector.push_back(attr);
+//        Attribute attr;
+//        attr.name = "table-id";
+//        attr.length = 4;
+//        attr.type = TypeInt;
+//        v.push_back(attr);
+//
+//        attr.name = "column-name";
+//        attr.length = 50;
+//        attr.type = TypeVarChar;
+//        v.push_back(attr);
+//
+//        attr.name = "column-type";
+//        attr.length = 4;
+//        attr.type = TypeInt;
+//        v.push_back(attr);
+//
+//        attr.name = "column-length";
+//        attr.length = 4;
+//        attr.type = TypeInt;
+//        v.push_back(attr);
+//
+//        attr.name = "column-position";
+//        attr.length = 4;
+//        attr.type = TypeInt;
+//        v.push_back(attr);
 
-        attr.name = "column-type";
-        attr.length = 4;
-        attr.type = TypeInt;
-        vector.push_back(attr);
-
-        attr.name = "column-length";
-        attr.length = 4;
-        attr.type = TypeInt;
-        vector.push_back(attr);
-
-        attr.name = "column-position";
-        attr.length = 4;
-        attr.type = TypeInt;
-        vector.push_back(attr);
-
-        return vector;
+        return v;
     }
 
     /*
@@ -136,34 +147,31 @@ namespace PeterDB {
         // 2*n bytes for storing the varchar
         //2*4 bytes for storing two ints
         int len = table_name.length();
-        unsigned char bitmap = 0; //corresponds to 00000000 bitmap
+        unsigned char bitmap = 0; // corresponds to 00000000 bitmap
         const char* table_name_cstr = table_name.c_str();
-        data = malloc(sizeof (char) + 2*sizeof (unsigned ) + 2*len + 2*sizeof (unsigned ));
-        memset(data, 0, sizeof (char) + 2*sizeof (unsigned ) + 2*len + 2*sizeof (unsigned ));
+
+        int total_size = sizeof (bitmap) + sizeof (table_id) + 2 * sizeof(len) + 2*len + sizeof (system);
+        data = malloc(total_size); memset(data, 0, total_size);
+//        memset(data, 0, sizeof (bitmap) + 2*sizeof (unsigned ) + 2*len + 2*sizeof (unsigned ));
+
         int offset = 0;
-        memcpy((char*)data+offset, &bitmap, sizeof (char));
-        //Increase offset by 1
-        offset += sizeof (char);
+        memcpy((char*)data + offset, &bitmap, sizeof (char)); offset += sizeof (char);
+
         //Store table-id
-        memcpy((char*)data+offset, &table_id, sizeof (unsigned ));
-        //Increase offset by 4
-        offset += sizeof (unsigned );
+        memcpy((char*)data + offset, &table_id, sizeof (unsigned )); offset += sizeof (unsigned );
+
         //Store varchar length in next 4 byte
-        memcpy((char*)data + offset, &len, sizeof (unsigned ));
-        //Increase offset by 4
-        offset += sizeof (unsigned );
+        memcpy((char*)data + offset, &len, sizeof (unsigned )); offset += sizeof (unsigned );
+
         //Store table-name in next 'len' bytes
-        memcpy((char*)data+offset, table_name_cstr, len);
-        //Increase offset by 'len'
-        offset += len;
+        memcpy((char*)data + offset, table_name_cstr, len); offset += len;
+
         //Store varchar length in next 4 byte
-        memcpy((char*)data + offset, &len, sizeof (unsigned ));
-        //Increase offset by 4
-        offset += sizeof (unsigned );
+        memcpy((char*)data + offset, &len, sizeof (unsigned )); offset += sizeof (unsigned );
+
         //Store file-name in next 'len' bytes
-        memcpy((char*)data+offset, table_name_cstr, len);
-        //Increase offset by 'len'
-        offset += len;
+        memcpy((char*)data + offset, table_name_cstr, len); offset += len;
+
         //Store system value (bool : 1 or 0) in next 4 bytes
         memcpy((char*)data+offset, &system, sizeof (unsigned ));
 
@@ -186,18 +194,12 @@ namespace PeterDB {
         const char* column_name_cstr = column_name.c_str();
         data = malloc(sizeof (char) + sizeof (unsigned) + len + 4*sizeof (unsigned ));
         int offset = 0;
-        memcpy((char*)data+offset, &bitmap, sizeof (char ));
-        offset += sizeof (char );
-        memcpy((char*)data+offset, &table_id, sizeof (unsigned ));
-        offset += sizeof (unsigned );
-        memcpy((char*)data+offset, &len, sizeof (unsigned ));
-        offset += sizeof (unsigned );
-        memcpy((char*)data+offset, column_name_cstr, len);
-        offset += len;
-        memcpy((char*)data+offset, &column_type, sizeof (unsigned ));
-        offset += sizeof (unsigned );
-        memcpy((char*)data+offset, &column_length, sizeof (unsigned ));
-        offset += sizeof (unsigned );
+        memcpy((char*)data+offset, &bitmap, sizeof (char )); offset += sizeof (char );
+        memcpy((char*)data+offset, &table_id, sizeof (unsigned )); offset += sizeof (unsigned );
+        memcpy((char*)data+offset, &len, sizeof (unsigned )); offset += sizeof (unsigned );
+        memcpy((char*)data+offset, column_name_cstr, len); offset += len;
+        memcpy((char*)data+offset, &column_type, sizeof (unsigned )); offset += sizeof (unsigned );
+        memcpy((char*)data+offset, &column_length, sizeof (unsigned )); offset += sizeof (unsigned );
         memcpy((char*)data+offset, &column_position, sizeof (unsigned ));
 
         return 0;
@@ -247,25 +249,17 @@ namespace PeterDB {
         //Delete the file. Return -1 if error occurred
         if(rbfm.destroyFile(tableName) != 0) return -1;
         //Find the table id and rid for deleting this table
-        std::vector<std::string> attributeNames_table;
-        attributeNames_table.push_back("table-id");
+        const std::vector<std::string> attributeNames_table = {"table-id"};
         void* value;
         prepare_value_for_varchar(tableName, value);
         rbfm.scan(table_handle, getTableAttribute(), "table-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator);
+
         RID rid;
-        void* data;
-        bool found = false;
-        int table_id;
-        while (rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
-            found = true;
-            //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
-            table_id = *(int*)((char*)data + sizeof (unsigned ));
-            break;
-        }
-        if(!found){
-            //No table entry was found in the catalog
-            return -1;
-        }
+        void* data = nullptr;
+        if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF) return -1;
+        //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
+        int table_id = *(int*)((char*)data + sizeof (unsigned ));
+
         //Found the table-id
         //Delete this record from 'tables' table
         rbfm.deleteRecord(table_handle, getTableAttribute(), rid);
@@ -275,7 +269,7 @@ namespace PeterDB {
         std::vector<std::string> attributeNames_column;
         attributeNames_column.push_back("table-id");
         rbfm.scan(column_handle, getColumnAttribute(), "table-id", EQ_OP, &table_id, attributeNames_column, rbfm_ScanIterator);
-        found = false;
+        bool found = false;
         while (rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
             found = true;
             rbfm.deleteRecord(column_handle, getColumnAttribute(), rid);
@@ -285,7 +279,7 @@ namespace PeterDB {
 
         return 0;
     }
-    RC RelationManager::prepare_value_for_varchar(const std::string &str, void* value){
+    RC RelationManager::prepare_value_for_varchar(const std::string &str, void* &value){
         int len = str.length();
         const char* str_cstr = str.c_str();
         value = malloc(sizeof (unsigned ) + len);

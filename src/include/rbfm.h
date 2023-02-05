@@ -65,7 +65,7 @@ namespace PeterDB {
 
         RC close();
         RC setScanner(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const std::string &conditionAttribute
-                , const CompOp compOp, const void *value, std::vector<std::string> attributeNames);
+                , const CompOp compOp, const void* &value, std::vector<std::string> attributeNames);
     private:
         int currPageIndex;
         int currSlotNum;
@@ -77,15 +77,11 @@ namespace PeterDB {
         std::vector<std::string> attributeNames;
         const void *value;
 
-        bool is_record_satisfiable(FileHandle &fileHandle,
-                                   const std::vector<Attribute> &recordDescriptor,
-                                   const RID &rid, const std::string &conditionAttribute,
-                                   const CompOp compOp, const void *value);
-        RC create_data_with_required_attributes(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid,
-                                       const std::vector<std::string> &attributeNames, void *data);
-        int get_sizeof_required_attributes_data(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
-                                             const RID &rid, const std::vector<std::string> &attributeNames, void* bitmap);
-        AttrType get_attribute_type(std::string attributeName, const std::vector<Attribute> &recordDescriptor);
+        bool is_record_satisfiable(const RID &rid);
+        RC create_data_with_required_attributes(const RID &rid, void *&data);
+        int get_sizeof_required_attributes_data(const RID &rid, void *&bitmap);
+        AttrType get_attribute_type(std::string attributeName);
+        int size_with_required_attributes(const RID &rid);
     };
 
     class RecordBasedFileManager {
@@ -120,7 +116,7 @@ namespace PeterDB {
                         RID &rid);
 
         // Read a record identified by the given rid.
-        RC readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid, void *data);
+        RC readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid, void *&data);
 
         // Print the record that is passed to this utility method.
         // This method will be mainly used for debugging/testing.
@@ -143,7 +139,7 @@ namespace PeterDB {
 
         // Read an attribute given its name and the rid.
         RC readAttribute(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid,
-                         const std::string &attributeName, void *data);
+                         const std::string &attributeName, void *&data);
 
         // Scan returns an iterator to allow the caller to go through the results one by one.
         RC scan(FileHandle &fileHandle,
@@ -154,7 +150,8 @@ namespace PeterDB {
                 const std::vector<std::string> &attributeNames, // a list of projected attributes
                 RBFM_ScanIterator &rbfm_ScanIterator);
         bool is_slot_a_tombstone(int slotnum, void* page);
-
+        RC readAttributeFromRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
+                                   const RID &rid, const std::string &attributeName, void *&data, void *data_record);
 
     private:
         bool isColValueNull(const void *data, int k);
@@ -163,7 +160,7 @@ namespace PeterDB {
         RC copyInputToRecord(void* record, const void *data, const std::vector<Attribute> &recordDescriptor, const std::vector<bool> &nullIndicator, int N);
         int calculateDataSize(const std::vector<Attribute> &recordDescriptor, void* record, const std::vector<bool> &nullIndicator);
         RC copyRecordToData(const std::vector<Attribute> &recordDescriptor, void* data, void* record, const std::vector<bool> &nullIndicator);
-        void* decoder(const std::vector<Attribute> &recordDescriptor, void* record, void* data);
+        void* decoder(const std::vector<Attribute> &recordDescriptor, void* record, void *&data);
         int insertDataNewPage(FileHandle &fileHandle, int recordSize, void* record);
         int findFreePageIndex(FileHandle &fileHandle, int recordSize);
         int insertDataByPageIndex(FileHandle &fileHandle, int pageIndex, void* record, int recordSize);
@@ -181,6 +178,9 @@ namespace PeterDB {
         RC insertMiscData(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,void *record, int recordSize, RID &rid);
         RC updateMiscRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, void *record, int updatedRecordSize, const RID &rid);
         RC deleteGivenRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid);
+//        RC calculateSizeofDataByRid(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
+//                                                            const RID &rid, int &sizeOfData);
+
     protected:
         RecordBasedFileManager();                                                   // Prevent construction
         ~RecordBasedFileManager();                                                  // Prevent unwanted destruction

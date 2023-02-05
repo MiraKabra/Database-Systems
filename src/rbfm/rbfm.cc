@@ -2,6 +2,9 @@
 #include <iostream>
 #include <cmath>
 #include <cstring>
+#include <algorithm>
+#include <bitset>
+
 namespace PeterDB {
     RecordBasedFileManager &RecordBasedFileManager::instance() {
         static RecordBasedFileManager _rbf_manager = RecordBasedFileManager();
@@ -478,68 +481,71 @@ namespace PeterDB {
 
 
     RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
-                                          const RID &rid, void *data) {
+                                          const RID &rid, void *&data) {
         int pageIndex = rid.pageNum;
         int slotNum = rid.slotNum;
         char* page = (char*)malloc(PAGE_SIZE);
         memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
-        int offsetForStartAddress = getStartAddressOffset(slotNum);
-        int offsetForRecordLength = getLenAddressOffset(slotNum);
 
-        int numSlots = 0;
-        memcpy(&numSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
-        int startAddress = 0;
-        int lengthOfRecord = 0;
+        int *slotTable = (int *)(page + PAGE_SIZE);
+        int numSlots = ((int *)slotTable)[-2];
+        int startAddress = ((int *)slotTable)[-2-2*slotNum];
+        int lengthOfRecord = ((int *)slotTable)[-2-2*slotNum+1];
 
-        memcpy(&startAddress, page + offsetForStartAddress, sizeof(unsigned ));
-        memcpy(&lengthOfRecord, page + offsetForRecordLength, sizeof(unsigned ));
+        if(false) {
+            int numSlots = 0;
+            memcpy(&numSlots, page + PAGE_SIZE - 2 * sizeof(unsigned), sizeof(unsigned));
+            int offsetForStartAddress = getStartAddressOffset(slotNum);
+            int offsetForRecordLength = getLenAddressOffset(slotNum);
+            int startAddress = 0;
+            int lengthOfRecord = 0;
+            memcpy(&startAddress, page + offsetForStartAddress, sizeof(unsigned));
+            memcpy(&lengthOfRecord, page + offsetForRecordLength, sizeof(unsigned));
+        }
+
         //This record was deleted, so cant be read
         if(lengthOfRecord == -1){
             free(page);
             return -1;
         }
-        bool tombstone_flag = isTombStone(startAddress);
-        if(tombstone_flag){
+        if(isTombStone(startAddress)){
             RID next_rid;
             tombStonePointerExtractor(next_rid, startAddress, page);
             readRecord(fileHandle, recordDescriptor, next_rid, data);
         }else{
-            bool internal_id_flag = isInternalId(startAddress);
-            if(internal_id_flag){
+            if(isInternalId(startAddress)){
                 lengthOfRecord = lengthOfRecord - 6*sizeof (char);
             }
             startAddress = startAddress & ((1 << 17) - 1);
-            void* record = malloc(lengthOfRecord);
-            memcpy(record, page + startAddress, lengthOfRecord);
+            void *record = page + startAddress;
             decoder(recordDescriptor, record, data);
-            free(record);
         }
         free(page);
         return 0;
     }
 
-    void* RecordBasedFileManager::decoder(const std::vector<Attribute> &recordDescriptor, void* record, void *data){
+    void* RecordBasedFileManager::decoder(const std::vector<Attribute> &recordDescriptor, void* record, void *&data){
 
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil((float)numberOfCols/8);
         //Get the number of nonnull value from first four bytes
         int N = *(int *) record;
         std::vector<bool> nullIndicator;
-        int bitMap = 0;
-        //The next 4 bytes after N contains bitMap
-        memcpy(&bitMap, (int*) record + 1, sizeof(unsigned));
-
+        void* bitMapPointer = (int*) record + 1;
         for(int k = 0; k < numberOfCols; k++){
-            bool isNull = isColValueNull(&bitMap, k);
+            bool isNull = isColValueNull(bitMapPointer, k);
             nullIndicator.push_back(isNull);
         }
         int sizeOfData = calculateDataSize(recordDescriptor, record, nullIndicator);
+
         //Assign memory for data
-//        void* data = malloc(sizeOfData);
-        //Fill the memory with zeros
+        if (data == nullptr) {
+            data = malloc(sizeOfData);
+        }
         memset(data, 0, sizeOfData);
         copyRecordToData(recordDescriptor, data, record, nullIndicator);
+
         return data;
     }
 
@@ -701,6 +707,7 @@ namespace PeterDB {
     int RecordBasedFileManager::getLenAddressOffset(int slotNum){
         return (PAGE_SIZE - (2 + 2*slotNum - 1)*sizeof (unsigned ));
     }
+
     //If slot is empty, the length is -1, return true
     //else return false
     bool RecordBasedFileManager::is_slot_empty(char* page, int slotNum){
@@ -964,20 +971,13 @@ namespace PeterDB {
         memcpy(&real_rid.slotNum, page + addr + len - 2*sizeof (char ), 2*sizeof (char));
         return 0;
     }
-    RC RecordBasedFileManager::readAttribute(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
-                                             const RID &rid, const std::string &attributeName, void *data) {
-        void* data_record;
-        //Read the record given by rid
-        readRecord(fileHandle, recordDescriptor, rid, data_record);
+
+    RC RecordBasedFileManager::readAttributeFromRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
+                                             const RID &rid, const std::string &attributeName, void *&data, void *data_record) {
+        assert(data_record != nullptr);
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil((float)numberOfCols/8);
 
-        std::vector<bool> nullIndicator;
-        for(int k = 0; k < numberOfCols; k++){
-            bool isNull = isColValueNull(data, k);
-            nullIndicator.push_back(isNull);
-            if(isNull) continue;
-        }
         bool is_null = false;
         int index_of_asked_attribute;
 
@@ -992,15 +992,17 @@ namespace PeterDB {
                 break;
             }
         }
-        if(is_null){
-            data = malloc(sizeof (char));
-            memset(data, 0, sizeof (char));
-            //attribute is null
-            char bitmap = char(128);
+        if(is_null) {
+            if(data == nullptr) {
+                data = malloc(sizeof (char));
+                memset(data, 0, sizeof (char));
+            }
+            // attribute is null
+            unsigned char bitmap = 128;
             memcpy(data, &bitmap, sizeof (char));
             return -1;
         }
-        //the attribute value is not null
+        // the attribute value is not null
         char* pointer = (char*)data_record;
         int offset = bitMapSize;
 
@@ -1015,19 +1017,33 @@ namespace PeterDB {
             }
         }
         if(recordDescriptor.at(index_of_asked_attribute).type != TypeVarChar){
-            data = malloc(sizeof (char ) + sizeof (unsigned ));
-            memset(data, 0, sizeof (char ) + sizeof (unsigned ));
+            auto alloc_size = sizeof (char) + sizeof (unsigned );
+            if(data == nullptr) {
+                data = malloc(alloc_size);
+            }
+            memset(data, 0, alloc_size);
             memcpy((char*)data + sizeof (char), (char*) pointer + offset, sizeof (unsigned ));
         }else{
             int len_of_data = *(int*)(pointer + offset);
             offset += sizeof (unsigned );
-            data = malloc(sizeof (char) + sizeof (unsigned ) + len_of_data);
-            memset(data, 0, sizeof (char) + sizeof (unsigned ) + len_of_data);
+            auto alloc_size = sizeof (char) + sizeof (unsigned ) + len_of_data;
+            if(data == nullptr) {
+                data = malloc(alloc_size);
+            }
+            memset(data, 0, alloc_size);
             memcpy((char*)data + sizeof (char), &len_of_data, sizeof (unsigned ));
             memcpy((char*)data + sizeof (char) + sizeof (unsigned ), (char*)pointer + offset, len_of_data);
         }
         return 0;
     }
+
+    RC RecordBasedFileManager::readAttribute(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
+                                             const RID &rid, const std::string &attributeName, void *&data) {
+        //Read the record given by rid
+        void *data_record = nullptr; readRecord(fileHandle, recordDescriptor, rid, data_record);
+        return readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName, data, data_record);
+    }
+
     //Returns an iterator called rbfm_ScanIterator
     RC RecordBasedFileManager::scan(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                     const std::string &conditionAttribute, const CompOp compOp, const void *value,
@@ -1054,104 +1070,118 @@ namespace PeterDB {
             }
             currSlotNum = 1;
             fileHandle.readPage(currPageIndex, page);
-
             rid.pageNum = currPageIndex;
             rid.slotNum = currSlotNum;
-        }else{
+        } else {
             rid.pageNum = currPageIndex;
             rid.slotNum = currSlotNum;
         }
         bool is_tombstone = rbfm.is_slot_a_tombstone(rid.slotNum, page);
         //If it's a tombstone, don't read it and move forward
-        if(is_tombstone){
-            int rc = getNextRecord(rid, data);
-            if(rc == RBFM_EOF) return RBFM_EOF;
-        }
+        if (is_tombstone && getNextRecord(rid, data) == RBFM_EOF) return RBFM_EOF;
 
-        bool meets_condition = is_record_satisfiable(fileHandle, recordDescriptor, rid, conditionAttribute, compOp, value);
-        if(meets_condition){
-            create_data_with_required_attributes(fileHandle, recordDescriptor, rid, attributeNames, data);
-        }else{
-            int rc = getNextRecord(rid, data);
-            if(rc == RBFM_EOF) return RBFM_EOF;
+        if(is_record_satisfiable(rid)){
+            create_data_with_required_attributes(rid, data);
+        } else if(getNextRecord(rid, data) == RBFM_EOF) {
+            return RBFM_EOF;
         }
         return 0;
     }
 
-    RC RBFM_ScanIterator::create_data_with_required_attributes(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid, const std::vector<std::string> &attributeNames, void *data){
-
+    int RBFM_ScanIterator::size_with_required_attributes(const RID &rid){
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
 
         int numberOfCols = attributeNames.size();
         int bitMapSize = ceil((float)numberOfCols/8);
         void* bitmap;
-        int result = get_sizeof_required_attributes_data(fileHandle, recordDescriptor, rid, attributeNames, bitmap);
+        int result = get_sizeof_required_attributes_data(rid, bitmap);
 
         int totalSize = bitMapSize + result;
-        data = malloc(totalSize);
+        return totalSize;
+    }
+
+    RC RBFM_ScanIterator::create_data_with_required_attributes(const RID &rid, void *&data){
+
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        void *data_record = nullptr; rbfm.readRecord(fileHandle, recordDescriptor, rid, data_record);
+
+        auto numberOfCols = attributeNames.size();
+        int bitMapSize = ceil((float)numberOfCols/8);
+        void* bitmap = nullptr;
+        int totalSize = get_sizeof_required_attributes_data(rid, bitmap);
+
+        if (data == nullptr) {
+            data = malloc(totalSize);
+        }
+        memset(data, 0, totalSize);
+
         int offset = 0;
         //copy bitmap
-        memcpy((char*)data + offset, bitmap, bitMapSize);
+        memcpy((char*)data + offset, bitmap, bitMapSize); offset += bitMapSize;
 
-        offset += bitMapSize;
         for(int k = 0; k < attributeNames.size(); k++){
             std::string attributeName = attributeNames.at(k);
-            AttrType type = get_attribute_type(attributeName, recordDescriptor);
-            void* read_attr;
-            int rc = rbfm.readAttribute(fileHandle, recordDescriptor, rid, attributeName, read_attr);
-            if(rc == -1){
+            AttrType type = get_attribute_type(attributeName);
+            void* read_attr = nullptr;
+            int rc = rbfm.readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName,
+                                                  read_attr, data_record);
+            char* attr_data = (char*)read_attr + sizeof (char);
+            if(rc == -1) {
                 continue;
             }
-            if(type == TypeInt || type == TypeReal){
-                memcpy((char*)data + offset, (char*)read_attr + sizeof (char), sizeof (unsigned ));
+            if (type == TypeInt || type == TypeReal){
+                memcpy((char*)data + offset, attr_data, sizeof (unsigned ));
                 offset += sizeof (unsigned );
-            }else{
-                int len = *(int*)((char*)read_attr + sizeof (char));
-                memcpy((char*)data + offset, (char*)read_attr + sizeof (char), sizeof (unsigned ) + len);
+            } else {
+                int len = *(int*)(attr_data);
+                memcpy((char*)data + offset, attr_data, sizeof (unsigned ) + len);
                 offset += sizeof (unsigned ) + len;
             }
         }
         return 0;
     }
 
-    int RBFM_ScanIterator::get_sizeof_required_attributes_data(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid, const std::vector<std::string> &attributeNames, void* bitmap){
+    int RBFM_ScanIterator::get_sizeof_required_attributes_data(const RID &rid, void *&bitmap) {
 
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
-        int result = 0;
-        int numberOfCols = attributeNames.size();
-        int bitMapSize = ceil((float)numberOfCols/8);
-        result += bitMapSize;
-        int bitmapVal = 0;
-        bitmap = malloc(bitMapSize*sizeof (char));
-        memset(bitmap, 0, bitMapSize*sizeof (char));
-        int shift = bitMapSize*8 - 1;
-        for(int k = 0; k < attributeNames.size(); k++){
-            std::string attributeName = attributeNames.at(k);
-            AttrType type = get_attribute_type(attributeName, recordDescriptor);
-            void* read_attr;
-            int rc = rbfm.readAttribute(fileHandle, recordDescriptor, rid, attributeName, read_attr);
+        void *data_record = nullptr; rbfm.readRecord(fileHandle, recordDescriptor, rid, data_record);
+
+        int totalSize = 0;
+        auto numberOfCols = attributeNames.size();
+        const int bitMapSize = ceil((float)numberOfCols/8);
+        totalSize += bitMapSize;
+
+        std::vector<std::bitset<8>> bitMap(bitMapSize);
+        for(int i = 0; i < attributeNames.size(); i++){
+            std::string attributeName = attributeNames.at(i);
+            AttrType type = get_attribute_type(attributeName);
+            void* read_attr = nullptr;
+            int rc = rbfm.readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName,
+                                                  read_attr, data_record);
             if(rc == -1){
-                int mask = (1 << shift);
-                bitmapVal = bitmapVal | mask;
+                bitMap[i/8].set(i%8);
                 continue;
             }
             if(type == TypeInt || type == TypeReal){
-                result += sizeof (unsigned );
-            }else{
+                totalSize += sizeof (unsigned );
+            } else {
                 int len = *(int*)((char*)read_attr + sizeof (char ));
-                result += sizeof (unsigned ) + len;
+                totalSize += sizeof (unsigned ) + len;
             }
-            if(k == attributeNames.size() - 1){
-                free(read_attr);
-            }
+            free(read_attr);
         }
-        char* pointer = (char*)&bitmapVal;
-        memcpy(bitmap, pointer + sizeof (unsigned )- bitMapSize, bitMapSize);
-        return result;
-
+        if (bitmap == nullptr) {
+            bitmap = malloc(bitMapSize * sizeof(char));
+        }
+        memset(bitmap, 0, bitMapSize*sizeof (char));
+        for(int i = 0; i < bitMapSize; i++) {
+            char* pointer = (char*)&bitMap[i];
+            memcpy((char*)bitmap + i, pointer, sizeof (char));
+        }
+        return totalSize;
     }
 
-    AttrType RBFM_ScanIterator::get_attribute_type(std::string attributeName, const std::vector<Attribute> &recordDescriptor){
+    AttrType RBFM_ScanIterator::get_attribute_type(std::string attributeName){
 
         for(int k = 0; k < recordDescriptor.size(); k++){
             Attribute attr = recordDescriptor.at(k);
@@ -1161,95 +1191,61 @@ namespace PeterDB {
         return TypeInt;
     }
 
-    bool RBFM_ScanIterator::is_record_satisfiable(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid, const std::string &conditionAttribute, const CompOp compOp, const void *value){
+    bool RBFM_ScanIterator::is_record_satisfiable(const RID &rid){
         if(compOp == NO_OP) return true;
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
-        void* read_attr;
+        void* read_attr = nullptr;
         rbfm.readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, read_attr);
-        AttrType attrType;
-        for(int i = 0; i < recordDescriptor.size(); i++){
-            Attribute attr = recordDescriptor.at(i);
-            if(strcmp(attr.name.c_str(), conditionAttribute.c_str()) == 0){
-                attrType = attr.type;
-                break;
-            }
+        // find attr in recordDescriptor with name = conditionAttribute
+        auto attr = find_if(recordDescriptor.begin(), recordDescriptor.end(),
+                         [&](const Attribute& attr) {return attr.name == conditionAttribute;}
+        );
+        if (attr == recordDescriptor.end()) {
+            return false;
         }
-        if(attrType == TypeInt){
-            int read_val = *(int *)((char*)read_attr + sizeof (char));
+        void *attr_val = (char*)read_attr + sizeof (char);
+        if(attr->type == TypeInt || attr->type == TypeReal){
+            int read_val = *(int *)((char*)attr_val);
             int given_val = *(int *)(value);
-            if(compOp == EQ_OP){
-                free(read_attr);
-                return (read_val = given_val);
-            }else if(compOp == LT_OP){
-                free(read_attr);
-                return (read_val < given_val);
-            }else if(compOp == LE_OP){
-                free(read_attr);
-                return (read_val <= given_val);
-            }else if(compOp == GT_OP){
-                free(read_attr);
-                return (read_val > given_val);
-            }else if(compOp == GE_OP){
-                free(read_attr);
-                return (read_val >= given_val);
-            }else if(compOp == NE_OP){
-                free(read_attr);
-                return (read_val != given_val);
+            free(read_attr);
+            switch(compOp){
+                case EQ_OP: return (read_val == given_val);
+                case LT_OP: return (read_val < given_val);
+                case LE_OP: return (read_val <= given_val);
+                case GT_OP: return (read_val > given_val);
+                case GE_OP: return (read_val >= given_val);
+                case NE_OP: return (read_val != given_val);
             }
-        }else if(attrType == TypeReal){
-            float read_val = *(float *)((char*)read_attr + sizeof (char));
+        }else if(attr->type == TypeReal){
+            float read_val = *(float *)((char*)attr_val); free(read_attr);
             float given_val = *(float *)(value);
-            if(compOp == EQ_OP){
-                free(read_attr);
-                return (read_val = given_val);
-            }else if(compOp == LT_OP){
-                free(read_attr);
-                return (read_val < given_val);
-            }else if(compOp == LE_OP){
-                free(read_attr);
-                return (read_val <= given_val);
-            }else if(compOp == GT_OP){
-                free(read_attr);
-                return (read_val > given_val);
-            }else if(compOp == GE_OP){
-                free(read_attr);
-                return (read_val >= given_val);
-            }else if(compOp == NE_OP){
-                free(read_attr);
-                return (read_val != given_val);
+            switch(compOp){
+                case EQ_OP: return (read_val == given_val);
+                case LT_OP: return (read_val < given_val);
+                case LE_OP: return (read_val <= given_val);
+                case GT_OP: return (read_val > given_val);
+                case GE_OP: return (read_val >= given_val);
+                case NE_OP: return (read_val != given_val);
             }
-        }else if(attrType == TypeVarChar){
-            int read_val_len = *(int*)((char*)read_attr + sizeof (char));
+        }else if(attr->type == TypeVarChar){
+            int read_val_len = *(int*)((char*)attr_val); free(read_attr);
             int given_val_len = *(int*)(value);
             char read_val[read_val_len + 1];
             char given_val[given_val_len + 1];
 
-            memcpy(&read_val, (char*)read_attr + sizeof (char) + sizeof (unsigned ), read_val_len);
+            memcpy(&read_val, (char*)read_attr + sizeof (unsigned ), read_val_len);
             read_val[read_val_len] = '\0';
 
             memcpy(&given_val, (char*)value + sizeof (unsigned ), given_val_len);
             given_val[given_val_len] = '\0';
-
-            if(compOp == EQ_OP){
-                free(read_attr);
-                return (strcmp(read_val, given_val) == 0);
-            }else if(compOp == LT_OP){
-                free(read_attr);
-                return (strcmp(read_val, given_val) < 0);
-            }else if(compOp == LE_OP){
-                free(read_attr);
-                return (strcmp(read_val, given_val) <= 0);
-            }else if(compOp == GT_OP){
-                free(read_attr);
-                return (strcmp(read_val, given_val) > 0);
-            }else if(compOp == GE_OP){
-                free(read_attr);
-                return (strcmp(read_val, given_val) >= 0);
-            }else if(compOp == NE_OP){
-                free(read_attr);
-                return (strcmp(read_val, given_val) != 0);
+            switch(compOp){
+                case EQ_OP: return (strcmp(read_val, given_val) == 0);
+                case LT_OP: return (strcmp(read_val, given_val) < 0);
+                case LE_OP: return (strcmp(read_val, given_val) <= 0);
+                case GT_OP: return (strcmp(read_val, given_val) > 0);
+                case GE_OP: return (strcmp(read_val, given_val) >= 0);
+                case NE_OP: return (strcmp(read_val, given_val) != 0);
             }
-
         }
         return false;
     }
@@ -1257,7 +1253,8 @@ namespace PeterDB {
         free(page);
         return 0;
     }
-    RC RBFM_ScanIterator::setScanner(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const std::string &conditionAttribute, const CompOp compOp, const void *value, std::vector<std::string> attributeNames){
+    RC RBFM_ScanIterator::setScanner(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const std::string &conditionAttribute
+            , const CompOp compOp, const void* &value, std::vector<std::string> attributeNames){
         this->fileHandle = fileHandle;
         this->recordDescriptor = recordDescriptor;
         this->compOp = compOp;
