@@ -1054,7 +1054,7 @@ namespace PeterDB {
         return 0;
     }
     //have not taken care of tombstone yet
-    RC RBFM_ScanIterator::getNextRecord(RID &rid, void *data) {
+    RC RBFM_ScanIterator::getNextRecord(RID &rid, void* &data) {
 
         int totalPages = fileHandle.getNumberOfPages();
         if(totalPages == 0) return RBFM_EOF;
@@ -1117,7 +1117,8 @@ namespace PeterDB {
 
         int offset = 0;
         //copy bitmap
-        memcpy((char*)data + offset, bitmap, bitMapSize); offset += bitMapSize;
+        memcpy((char*)data + offset, bitmap, bitMapSize);
+        offset += bitMapSize;
 
         for(int k = 0; k < attributeNames.size(); k++){
             std::string attributeName = attributeNames.at(k);
@@ -1228,14 +1229,15 @@ namespace PeterDB {
                 case NE_OP: return (read_val != given_val);
             }
         }else if(attr->type == TypeVarChar){
-            int read_val_len = *(int*)((char*)attr_val); free(read_attr);
+            int read_val_len = *(int*)((char*)attr_val);
+
             int given_val_len = *(int*)(value);
             char read_val[read_val_len + 1];
             char given_val[given_val_len + 1];
 
-            memcpy(&read_val, (char*)read_attr + sizeof (unsigned ), read_val_len);
+            memcpy(&read_val, (char*)attr_val + sizeof (unsigned ), read_val_len);
             read_val[read_val_len] = '\0';
-
+            free(read_attr);
             memcpy(&given_val, (char*)value + sizeof (unsigned ), given_val_len);
             given_val[given_val_len] = '\0';
             switch(compOp){

@@ -255,10 +255,11 @@ namespace PeterDB {
         rbfm.scan(table_handle, getTableAttribute(), "table-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator);
 
         RID rid;
-        void* data = nullptr;
+
+        void* data;
         if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF) return -1;
         //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
-        int table_id = *(int*)((char*)data + sizeof (unsigned ));
+        int table_id = *(int*)((char*)data + sizeof (char));
 
         //Found the table-id
         //Delete this record from 'tables' table
@@ -275,7 +276,6 @@ namespace PeterDB {
             rbfm.deleteRecord(column_handle, getColumnAttribute(), rid);
         }
         rbfm_ScanIterator.close();
-        free(data);
 
         return 0;
     }
