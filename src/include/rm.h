@@ -45,6 +45,7 @@ namespace PeterDB {
         std::string column_file = "Columns";
         FileHandle table_handle;
         FileHandle column_handle;
+        bool catalog_exists = false;
         static RelationManager &instance();
 
         RC createCatalog();
@@ -100,8 +101,8 @@ namespace PeterDB {
                      RM_IndexScanIterator &rm_IndexScanIterator);
 
     private:
-        RC createDataForTables_table(int table_id, std::string table_name,  int system, char* data);
-        RC createDataForColumns_table(int table_id, std::string column_name, int column_type, int column_length, int column_position, char* data);
+        RC createDataForTables_table(int table_id, std::string table_name,  int system, void* &data);
+        RC createDataForColumns_table(int table_id, std::string column_name, int column_type, int column_length, int column_position, void* &data);
         std::vector<Attribute> getTableAttribute();
         std::vector<Attribute> getColumnAttribute();
         RC prepare_value_for_varchar(const std::string &str, void* value);

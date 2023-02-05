@@ -34,21 +34,21 @@ namespace PeterDB {
         //Create entries for 'Tables' table
         void* table_entry[2];
 
-        createDataForTables_table(1, "Tables", 1, (char*)table_entry[0]);
-        createDataForTables_table(2, "Columns", 1, (char*)table_entry[1]);
+        createDataForTables_table(1, "Tables", 1, table_entry[0]);
+        createDataForTables_table(2, "Columns", 1, table_entry[1]);
 
         //Create entries for 'Columns' table
         void* column_entry[9];
 
-        createDataForColumns_table(1, "table-id", TypeInt, 4, 1, (char *)column_entry[0]);
-        createDataForColumns_table(1, "table-name", TypeVarChar, 50, 2, (char *)column_entry[1]);
-        createDataForColumns_table(1, "file-name", TypeVarChar, 50, 3, (char *)column_entry[2]);
-        createDataForColumns_table(1, "system", TypeInt, 4, 4, (char *)column_entry[3]);
-        createDataForColumns_table(2, "table-id", TypeInt, 4, 1, (char *)column_entry[4]);
-        createDataForColumns_table(2, "column-name", TypeVarChar, 50, 2, (char *)column_entry[5]);
-        createDataForColumns_table(2, "column-type", TypeInt, 4, 3, (char *)column_entry[6]);
-        createDataForColumns_table(2, "column-length", TypeInt, 4, 4, (char *)column_entry[7]);
-        createDataForColumns_table(2, "column-position", TypeInt, 4, 5, (char *)column_entry[8]);
+        createDataForColumns_table(1, "table-id", TypeInt, 4, 1, column_entry[0]);
+        createDataForColumns_table(1, "table-name", TypeVarChar, 50, 2, column_entry[1]);
+        createDataForColumns_table(1, "file-name", TypeVarChar, 50, 3, column_entry[2]);
+        createDataForColumns_table(1, "system", TypeInt, 4, 4, column_entry[3]);
+        createDataForColumns_table(2, "table-id", TypeInt, 4, 1, column_entry[4]);
+        createDataForColumns_table(2, "column-name", TypeVarChar, 50, 2, column_entry[5]);
+        createDataForColumns_table(2, "column-type", TypeInt, 4, 3, column_entry[6]);
+        createDataForColumns_table(2, "column-length", TypeInt, 4, 4, column_entry[7]);
+        createDataForColumns_table(2, "column-position", TypeInt, 4, 5, column_entry[8]);
 
         RID rid;
         //Enter the "Tables" and "Columns" entries
@@ -62,6 +62,7 @@ namespace PeterDB {
             free(column_entry[i]);
         }
         RelationManager::tableCount+=2;
+        this->catalog_exists = true;
         return 0;
     }
 
@@ -129,41 +130,42 @@ namespace PeterDB {
      * The first entry will be: (1, "Tables", "Tables", 1)
      * The second entry will be: (2, "Columns", "Columns", 1)
      * */
-    RC RelationManager::createDataForTables_table(int table_id, std::string table_name, int system, char* data){
+    RC RelationManager::createDataForTables_table(int table_id, std::string table_name, int system, void* &data){
         // 1 byte for bitmap (11110000)
         // 2*4 bytes for storing length(n) of varchar
         // 2*n bytes for storing the varchar
         //2*4 bytes for storing two ints
         int len = table_name.length();
-        char bitmap = char(240); //corresponds to 11110000 bitmap
+        unsigned char bitmap = 0; //corresponds to 00000000 bitmap
         const char* table_name_cstr = table_name.c_str();
-        data = (char *)malloc(sizeof (char) + 2*sizeof (unsigned ) + 2*len + 2*sizeof (unsigned ));
+        data = malloc(sizeof (char) + 2*sizeof (unsigned ) + 2*len + 2*sizeof (unsigned ));
+        memset(data, 0, sizeof (char) + 2*sizeof (unsigned ) + 2*len + 2*sizeof (unsigned ));
         int offset = 0;
-        memcpy(data+offset, &bitmap, sizeof (char));
+        memcpy((char*)data+offset, &bitmap, sizeof (char));
         //Increase offset by 1
         offset += sizeof (char);
         //Store table-id
-        memcpy(data+offset, &table_id, sizeof (unsigned ));
+        memcpy((char*)data+offset, &table_id, sizeof (unsigned ));
         //Increase offset by 4
         offset += sizeof (unsigned );
         //Store varchar length in next 4 byte
-        memcpy(data + offset, &len, sizeof (unsigned ));
+        memcpy((char*)data + offset, &len, sizeof (unsigned ));
         //Increase offset by 4
         offset += sizeof (unsigned );
         //Store table-name in next 'len' bytes
-        memcpy(data+offset, table_name_cstr, len);
+        memcpy((char*)data+offset, table_name_cstr, len);
         //Increase offset by 'len'
         offset += len;
         //Store varchar length in next 4 byte
-        memcpy(data + offset, &len, sizeof (unsigned ));
+        memcpy((char*)data + offset, &len, sizeof (unsigned ));
         //Increase offset by 4
         offset += sizeof (unsigned );
         //Store file-name in next 'len' bytes
-        memcpy(data+offset, table_name_cstr, len);
+        memcpy((char*)data+offset, table_name_cstr, len);
         //Increase offset by 'len'
         offset += len;
         //Store system value (bool : 1 or 0) in next 4 bytes
-        memcpy(data+offset, &system, sizeof (unsigned ));
+        memcpy((char*)data+offset, &system, sizeof (unsigned ));
 
         return 0;
     }
@@ -178,25 +180,25 @@ namespace PeterDB {
      * seventh entry: (2, "column-length", TypeInt, 4, 4)
      * eighth entry: (2, "column-position", TypeInt, 4, 5)
      * */
-    RC RelationManager::createDataForColumns_table(int table_id, std::string column_name, int column_type, int column_length, int column_position, char* data){
+    RC RelationManager::createDataForColumns_table(int table_id, std::string column_name, int column_type, int column_length, int column_position, void* &data){
         int len = column_name.length();
-        char bitmap = char(240); //corresponds to 11110000 bitmap
+        unsigned char bitmap = 0; //corresponds to 00000000 bitmap
         const char* column_name_cstr = column_name.c_str();
-        data = (char*) malloc(sizeof (char) + sizeof (unsigned) + len + 4*sizeof (unsigned ));
+        data = malloc(sizeof (char) + sizeof (unsigned) + len + 4*sizeof (unsigned ));
         int offset = 0;
-        memcpy(data+offset, &bitmap, sizeof (char ));
+        memcpy((char*)data+offset, &bitmap, sizeof (char ));
         offset += sizeof (char );
-        memcpy(data+offset, &table_id, sizeof (unsigned ));
+        memcpy((char*)data+offset, &table_id, sizeof (unsigned ));
         offset += sizeof (unsigned );
-        memcpy(data+offset, &len, sizeof (unsigned ));
+        memcpy((char*)data+offset, &len, sizeof (unsigned ));
         offset += sizeof (unsigned );
-        memcpy(data+offset, column_name_cstr, len);
+        memcpy((char*)data+offset, column_name_cstr, len);
         offset += len;
-        memcpy(data+offset, &column_type, sizeof (unsigned ));
+        memcpy((char*)data+offset, &column_type, sizeof (unsigned ));
         offset += sizeof (unsigned );
-        memcpy(data+offset, &column_length, sizeof (unsigned ));
+        memcpy((char*)data+offset, &column_length, sizeof (unsigned ));
         offset += sizeof (unsigned );
-        memcpy(data+offset, &column_position, sizeof (unsigned ));
+        memcpy((char*)data+offset, &column_position, sizeof (unsigned ));
 
         return 0;
     }
@@ -207,10 +209,14 @@ namespace PeterDB {
         if(rbfm.destroyFile(table_file) != 0) return -1;
         if(rbfm.destroyFile(column_file) !=0) return -1;
         RelationManager::tableCount = 0;
+        this->catalog_exists = false;
         return 0;
     }
 
     RC RelationManager::createTable(const std::string &tableName, const std::vector<Attribute> &attrs) {
+        //should fail if no catalog was created before calling it
+        if(!this->catalog_exists) return -1;
+
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         //Create a file for this table, return -1 if it already exists
         if(rbfm.createFile(tableName) != 0) return -1;
@@ -218,14 +224,14 @@ namespace PeterDB {
         RID rid;
         //Insert data in 'Tables' table
         void* data_for_tables_table;
-        createDataForTables_table(RelationManager::tableCount, tableName, 0, (char*)data_for_tables_table);
+        createDataForTables_table(RelationManager::tableCount, tableName, 0, data_for_tables_table);
         rbfm.insertRecord(table_handle, getTableAttribute(), data_for_tables_table, rid);
         free(data_for_tables_table);
         //Insert data in 'Columns' table
         for(int i = 0; i < attrs.size(); i++){
             void* data;
             Attribute attr = attrs.at(i);
-            createDataForColumns_table(RelationManager::tableCount, attr.name, attr.type, attr.length, i+1, (char*)data);
+            createDataForColumns_table(RelationManager::tableCount, attr.name, attr.type, attr.length, i+1, data);
             rbfm.insertRecord(column_handle, getColumnAttribute(), data, rid);
             free(data);
         }
@@ -235,6 +241,7 @@ namespace PeterDB {
 
     RC RelationManager::deleteTable(const std::string &tableName) {
 
+        if(!this->catalog_exists) return -1;
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         RBFM_ScanIterator rbfm_ScanIterator;
         //Delete the file. Return -1 if error occurred
