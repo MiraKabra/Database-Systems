@@ -76,6 +76,7 @@ namespace PeterDB {
         CompOp compOp;
         std::vector<std::string> attributeNames;
         const void *value;
+        bool set_success = false;
 
         bool is_record_satisfiable(const RID &rid);
         RC create_data_with_required_attributes(const RID &rid, void *&data);

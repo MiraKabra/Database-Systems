@@ -511,21 +511,53 @@ namespace PeterDB {
                              RM_ScanIterator &rm_ScanIterator) {
 
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        FileHandle curr_file_handle;
+        //Return error if file does not exist
+        if(rbfm.openFile(tableName, curr_file_handle) != 0) return -1;
 
-
+        std::vector<Attribute> recordDescriptor;
+        getAttributes(tableName, recordDescriptor);
+        rm_ScanIterator.setScanner(curr_file_handle, recordDescriptor, conditionAttribute, compOp, value, attributeNames);
         return 0;
     }
 
+    RC RM_ScanIterator::setScanner(FileHandle &fileHandle,
+                                   const std::vector<Attribute> &recordDescriptor,
+                                   const std::string &conditionAttribute,
+                                   const CompOp compOp,
+                                   const void *value,
+                                   const std::vector<std::string> &attributeNames){
+
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        this->fileHandle = fileHandle;
+        int rc = rbfm.scan(fileHandle, recordDescriptor, conditionAttribute, compOp, value, attributeNames, this->rbfm_ScanIterator);
+        if(rc == 0){
+            this->set_success = true;
+        }
+        return rc;
+    }
     RM_ScanIterator::RM_ScanIterator() = default;
 
     RM_ScanIterator::~RM_ScanIterator() = default;
 
     RC RM_ScanIterator::getNextTuple(RID &rid, void *data) {
-
-        return RM_EOF;
+        //If the caller (eg. test) has allocated some memory to *data before
+        //passing it to this function, then it will copy the result in
+        //the correct place.
+        //If I ever want to call this, I should either first set 'data = nullptr' or make data = malloc(some_size) [where size can be PAGE_SIZE]
+        if(this->rbfm_ScanIterator.getNextRecord(rid, data) == RM_EOF) return RM_EOF;
+        return 0;
     }
 
-    RC RM_ScanIterator::close() { return -1; }
+    RC RM_ScanIterator::close() {
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        if(set_success){
+            rbfm.closeFile(this->fileHandle);
+            rbfm_ScanIterator.close();
+        }
+        this->set_success = false;
+        return 0;
+    }
 
     // Extra credit work
     RC RelationManager::dropAttribute(const std::string &tableName, const std::string &attributeName) {

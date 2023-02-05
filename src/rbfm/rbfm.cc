@@ -1050,8 +1050,9 @@ namespace PeterDB {
                                     const std::vector<std::string> &attributeNames,
                                     RBFM_ScanIterator &rbfm_ScanIterator) {
 
-        rbfm_ScanIterator.setScanner(fileHandle, recordDescriptor, conditionAttribute, compOp, value, attributeNames);
-        return 0;
+        int rc = rbfm_ScanIterator.setScanner(fileHandle, recordDescriptor, conditionAttribute, compOp, value, attributeNames);
+
+        return rc;
     }
     //have not taken care of tombstone yet
     RC RBFM_ScanIterator::getNextRecord(RID &rid, void* &data) {
@@ -1252,7 +1253,10 @@ namespace PeterDB {
         return false;
     }
     RC RBFM_ScanIterator::close() {
-        free(page);
+        if(set_success){
+            free(page);
+        }
+        set_success = false;
         return 0;
     }
     RC RBFM_ScanIterator::setScanner(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const std::string &conditionAttribute
@@ -1269,8 +1273,10 @@ namespace PeterDB {
         memset(page, 0, PAGE_SIZE);
         if(fileHandle.getNumberOfPages() != 0){
             currPageIndex++;
-            fileHandle.readPage(currPageIndex, page);
+            if(fileHandle.readPage(currPageIndex, page) == -1) return -1;
         }
+        this->set_success = true;
+        return 0;
     }
 
 } // namespace PeterDB

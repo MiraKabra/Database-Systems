@@ -19,8 +19,16 @@ namespace PeterDB {
         RC getNextTuple(RID &rid, void *data);
 
         RC close();
+        RC setScanner(FileHandle &fileHandle,
+                      const std::vector<Attribute> &recordDescriptor,
+                      const std::string &conditionAttribute,
+                      const CompOp compOp,
+                      const void *value,
+                      const std::vector<std::string> &attributeNames);
     private:
         RBFM_ScanIterator rbfm_ScanIterator;
+        FileHandle fileHandle;
+        bool set_success = false;
     };
 
     // RM_IndexScanIterator is an iterator to go through index entries
