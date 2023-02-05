@@ -257,7 +257,7 @@ namespace PeterDB {
 
         RID rid;
 
-        void* data;
+        void* data = nullptr;
         if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF) return -1;
         //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
         int table_id = *(int*)((char*)data + sizeof (char));
@@ -292,7 +292,57 @@ namespace PeterDB {
     }
 
     RC RelationManager::getAttributes(const std::string &tableName, std::vector<Attribute> &attrs) {
-        return -1;
+
+        if(!this->catalog_exists) return -1;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        RBFM_ScanIterator rbfm_ScanIterator;
+        //Find the table id for this table
+        const std::vector<std::string> attributeNames_table = {"table-id"};
+        void* value;
+        prepare_value_for_varchar(tableName, value);
+        rbfm.scan(table_handle, getTableAttribute(), "table-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator);
+
+        RID rid;
+        void* data = nullptr;
+
+        if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF) return -1;
+
+        //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
+        int table_id = *(int*)((char*)data + sizeof (char));
+        //Found the table-id
+        rbfm_ScanIterator.close();
+        free(value);
+
+        //Now find the entries with this table-id in 'columns' table one by one and add them to the attrs vector
+        std::vector<std::string> attributeNames_column;
+        attributeNames_column.push_back("column-name");
+        attributeNames_column.push_back("column-type");
+        attributeNames_column.push_back("column-length");
+
+        rbfm.scan(column_handle, getColumnAttribute(), "table-id", EQ_OP, &table_id, attributeNames_column, rbfm_ScanIterator);
+
+
+        while (rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
+            int offset = sizeof(char);
+            int col_name_len = *(int*)((char*) data + offset);
+            offset += sizeof (unsigned );
+            const char* col_name_ptr = (char*)malloc(col_name_len);
+            memcpy((void*)col_name_ptr, (char*)data + offset, col_name_len);
+            //Store attribute name
+            std::string column_name = col_name_ptr;
+            //Free the pointer and increase offset
+            free((void*)col_name_ptr);
+            offset += col_name_len;
+            AttrType column_type = (AttrType)(*(int*)((char*)data + offset));
+            offset += sizeof (unsigned );
+            AttrLength column_length = (AttrLength)(*(int*)((char*)data + offset));
+            attrs.push_back({column_name, column_type, column_length});
+            free(data);
+            data = nullptr;
+        }
+        rbfm_ScanIterator.close();
+
+        return 0;
     }
 
     RC RelationManager::insertTuple(const std::string &tableName, const void *data, RID &rid) {
