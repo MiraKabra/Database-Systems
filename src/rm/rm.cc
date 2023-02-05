@@ -1,4 +1,5 @@
 #include "src/include/rm.h"
+#include <cstring>
 
 namespace PeterDB {
     int RelationManager::tableCount;
