@@ -60,7 +60,7 @@ namespace PeterDB {
             int newPageIndex = insertDataNewPage(fileHandle, recordSize, record);
             rid.pageNum = newPageIndex;
             rid.slotNum = 1;
-        }else{
+        } else {
             int freePageIndex = findFreePageIndex(fileHandle, recordSize);
             //No suitable  free space found, so append a new page
             if(freePageIndex == -1){
@@ -177,7 +177,8 @@ namespace PeterDB {
             memcpy(&lengthOfLastRecord, page + PAGE_SIZE - totalLengthOfMetadata + 4, sizeof(unsigned));
 //        unsigned startAddressOfLastRecord = ((unsigned *)(page + PAGE_SIZE - totalLengthOfMetadata))[0];
 //        unsigned lengthOfLastRecord = ((unsigned *)(page + PAGE_SIZE - totalLengthOfMetadata))[1];
-
+            //Handle id this this some internal id (otherwise next line will blow up)
+            startAddressOfLastRecord = (startAddressOfLastRecord) & ((1 << 17) - 1);
             unsigned insertAddressForRecord = startAddressOfLastRecord + lengthOfLastRecord;
             memcpy(page + insertAddressForRecord, record, recordSize);
             /*Add slot info*/
@@ -267,6 +268,7 @@ namespace PeterDB {
             if(curr_record_data_addr == -1){
                 continue;
             }
+            curr_record_data_addr =  curr_record_data_addr & ((1 << 17) - 1);
             int new_addr_offset = curr_record_data_addr - shiftBy;
             memcpy(&curr_record_len, page + curr_record_len_addr, sizeof (unsigned ));
             //shift the data to left
@@ -826,6 +828,9 @@ namespace PeterDB {
             RID next_rid;
             tombStonePointerExtractor(next_rid, record_data_addr, page);
             updateMiscRecord(fileHandle, recordDescriptor, updated_record, updatedRecordSize, next_rid);
+            //When returned from updating the actual record, for updating the data of this
+            //tombstone pointer, the record size is 6, not th size of the 'updated data'
+            updatedRecordSize = 6*sizeof (char);
         }
         bool is_internal = isInternalId(record_data_addr);
 
@@ -912,7 +917,7 @@ namespace PeterDB {
                 fileHandle.writePage(insert_pageNum, insert_page);
                 free(insert_page);
                 //Store the insert page num and slot num info here
-                //This page will fo sure have the size available for
+                //This page will for sure have the size available for
                 //this update. Not calling updateRecord function here, because the data is not the format of *data
                 //So, do a insertion from scratch
 

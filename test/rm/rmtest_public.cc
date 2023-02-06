@@ -406,7 +406,7 @@ namespace PeterDBTesting {
 
     }
 
-    TEST_F(RM_Large_Table_Test, insert_large_tuples) {
+    TEST_F(RM_Large_Table_Test, insert_large_tuples)    {
         // Functions Tested for large tables:
         // 1. getAttributes
         // 2. insert tuple

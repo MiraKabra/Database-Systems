@@ -107,6 +107,7 @@ namespace PeterDB {
                      bool lowKeyInclusive,
                      bool highKeyInclusive,
                      RM_IndexScanIterator &rm_IndexScanIterator);
+        bool fileExists(const std::string &fileName);
 
     private:
         RC createDataForTables_table(int table_id, std::string table_name,  int system, void* &data);

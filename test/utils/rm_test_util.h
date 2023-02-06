@@ -224,7 +224,6 @@ namespace PeterDBTesting {
 
                 // Delete Catalog
                 ASSERT_EQ(rm.deleteCatalog(), success) << "Deleting the Catalog should succeed.";
-
                 remove("rids_file");
                 remove("sizes_file");
             }
