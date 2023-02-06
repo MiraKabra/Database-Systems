@@ -44,7 +44,7 @@ namespace PeterDB {
         return return_val;
     }
 
-
+    //checked
     RC RecordBasedFileManager::insertRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const void *data, RID &rid) {
         int recordSize = 0;
@@ -76,7 +76,7 @@ namespace PeterDB {
         free(record);
         return 0;
     }
-
+    //checked
     RC RecordBasedFileManager::insertMiscData(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, void *record, int recordSize, RID &rid) {
 
         int pageNums = fileHandle.getNumberOfPages();
@@ -105,7 +105,7 @@ namespace PeterDB {
         free(record);
         return 0;
     }
-
+    //checked
     /*
      * Insert data in the hole
      * right shift all other data
@@ -123,6 +123,7 @@ namespace PeterDB {
         else if(holeNum == totalSlots){
             //So, in this case totalSlots > 1
             int right_slot_data_address = *(int *)(page + getStartAddressOffset(holeNum-1));
+            right_slot_data_address = right_slot_data_address & ((1 << 17) - 1);
             int right_slot_data_len = *(int *)(page + getLenAddressOffset(holeNum-1));
             insertAddressForRecord = right_slot_data_address + right_slot_data_len;
         }
@@ -130,6 +131,7 @@ namespace PeterDB {
             //Hole resides in between the slots. So, get the address of the
             //record that will become immediate right to it (i.e. immediate left slot)
             int left_slot_data_address = *(int *)(page + getStartAddressOffset(holeNum+1));
+            left_slot_data_address = left_slot_data_address & ((1 << 17) - 1);
             insertAddressForRecord = left_slot_data_address;
         }
         //Shift other records to right
@@ -142,7 +144,7 @@ namespace PeterDB {
         memcpy(page+ getLenAddressOffset(holeNum), &recordSize, sizeof (unsigned ));
         return 0;
     }
-
+    //checked
     //Returns slotNum where record was inserted
     int RecordBasedFileManager::insertDataByPageIndex(FileHandle &fileHandle, int pageIndex, void* record, int recordSize){
 
@@ -204,12 +206,14 @@ namespace PeterDB {
         free(page);
         return insertion_index;
     }
+
     /*
      * Scan if any slot is free. It will be checked by checking the length field.
      * The length field for a free slot is -1
      * If yes, return the slot number.
      * else, return -1
      * */
+    //checked
     int RecordBasedFileManager::free_slot_num(char* page, int totalSlots){
         for(int i = 1; i <= totalSlots; i++){
             int len_offset = getLenAddressOffset(i);
@@ -226,6 +230,7 @@ namespace PeterDB {
      * If startSlot is more than totalSlots, then just return as there is nothing to shift
      * Note: this function does not update the free space after shifting
      * */
+    //checked
     RC RecordBasedFileManager::shiftRecordsRight(char* page, int totalSlots, int startSlot, int shiftBy){
         if(startSlot > totalSlots) return 0;
         //Start by shifting rightmost element first
@@ -239,11 +244,25 @@ namespace PeterDB {
             if(curr_record_data_addr == -1){
                 continue;
             }
+            bool isTombstone = isTombStone(curr_record_data_addr);
+
+            bool isInternal = isInternalId(curr_record_data_addr);
+
+            curr_record_data_addr =  curr_record_data_addr & ((1 << 17) - 1);
+
             int new_addr_offset = curr_record_data_addr + shiftBy;
             memcpy(&curr_record_len, page + curr_record_len_addr, sizeof (unsigned ));
+
             //shift the data to right
             memmove(page + new_addr_offset, page + curr_record_data_addr, curr_record_len);
+
             //Update the data address in the slot
+            if(isTombstone){
+                new_addr_offset = new_addr_offset | (1 << 31);
+            }
+            if(isInternal){
+                new_addr_offset = new_addr_offset | (1 << 30);
+            }
             memcpy(page + curr_record_start_addr, &new_addr_offset, sizeof (unsigned ));
         }
         return 0;
@@ -255,10 +274,11 @@ namespace PeterDB {
      * If startSlot is more than totalSlots, then just return as there is nothing to shift
      * Note: this function does not update the free space after shifting
      * */
+    //checked
     RC RecordBasedFileManager::shiftRecordsLeft(char* page, int totalSlots, int startSlot, int shiftBy){
         if(startSlot > totalSlots) return 0;
         //start shifting the leftmost element first
-        for(int i = startSlot; i <= totalSlots; i++){
+        for(int i = startSlot; i <= totalSlots; i++) {
             int curr_record_start_addr = getStartAddressOffset(i);
             int curr_record_len_addr = getLenAddressOffset(i);
             int curr_record_len = 0;
@@ -268,17 +288,29 @@ namespace PeterDB {
             if(curr_record_data_addr == -1){
                 continue;
             }
+            bool isTombstone = isTombStone(curr_record_data_addr);
+
+            bool isInternal = isInternalId(curr_record_data_addr);
+
             curr_record_data_addr =  curr_record_data_addr & ((1 << 17) - 1);
             int new_addr_offset = curr_record_data_addr - shiftBy;
+
             memcpy(&curr_record_len, page + curr_record_len_addr, sizeof (unsigned ));
             //shift the data to left
             memmove(page + new_addr_offset, page + curr_record_data_addr, curr_record_len);
             //Update the data address in the slot
+            if(isTombstone){
+                new_addr_offset = new_addr_offset | (1 << 31);
+            }
+            if(isInternal){
+                new_addr_offset = new_addr_offset | (1 << 30);
+            }
             memcpy(page + curr_record_start_addr, &new_addr_offset, sizeof (unsigned ));
         }
         return 0;
     }
     //Returns the pageIndex of the new Page
+    //checked
     int RecordBasedFileManager::insertDataNewPage(FileHandle &fileHandle, int recordSize, void* record){
         char* page = (char*)malloc(PAGE_SIZE);
         memset(page, 0, PAGE_SIZE);
@@ -319,6 +351,7 @@ namespace PeterDB {
      * Return the pageIndex where the freeSpace was available
      * If not found, return -1
      * In case of not found, a new page will be appended in the caller function*/
+    //checked
     int RecordBasedFileManager::findFreePageIndex(FileHandle &fileHandle, int recordSize){
         int pageNums = fileHandle.getNumberOfPages();
         //Freespace has to be atleast (recordSize + 2*4 B). 2*4 B is for metadata
@@ -352,7 +385,7 @@ namespace PeterDB {
         //If no such page was found, return -1
         return -1;
     }
-
+    //checked
     void* RecordBasedFileManager::encoder(const std::vector<Attribute> &recordDescriptor, const void *data, int& getRecordSize){
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil((float)numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
@@ -374,7 +407,7 @@ namespace PeterDB {
         copyInputToRecord(record, data, recordDescriptor, nullIndicator, N);
         return record;
     }
-
+    //checked
     RC RecordBasedFileManager::copyInputToRecord(void* record, const void *data, const std::vector<Attribute> &recordDescriptor, const std::vector<bool> &nullIndicator, int N){
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil((float)numberOfCols/8); // eg. 1 for 3 cols, 2 for 9 cols
@@ -438,7 +471,7 @@ namespace PeterDB {
         }
         return 0;
     }
-
+    //checked
     int RecordBasedFileManager::calculateRecordSize(int N, const std::vector<Attribute> &recordDescriptor, const void *data, const std::vector<bool> &nullIndicator){
 
         int numberOfCols = recordDescriptor.size();
@@ -466,6 +499,7 @@ namespace PeterDB {
         }
         return recordSize;
     }
+    //checked
     bool RecordBasedFileManager::isColValueNull(const void *data, int k){
         return (bool)(*((unsigned char *) data + k/8) & (1 << (8 - k%8 - 1)));
         unsigned char* pointer;
@@ -481,7 +515,7 @@ namespace PeterDB {
         return false;
     }
 
-
+    //checked
     RC RecordBasedFileManager::readRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                           const RID &rid, void *&data) {
         int pageIndex = rid.pageNum;
@@ -489,6 +523,8 @@ namespace PeterDB {
         char* page = (char*)malloc(PAGE_SIZE);
         memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
+        //return error if trying to read a hole
+        if(is_slot_empty(page, slotNum)) return -1;
 
         int *slotTable = (int *)(page + PAGE_SIZE);
         int numSlots = ((int *)slotTable)[-2];
@@ -511,11 +547,11 @@ namespace PeterDB {
             free(page);
             return -1;
         }
-        if(isTombStone(startAddress)){
+        if(isTombStone(startAddress)) {
             RID next_rid;
             tombStonePointerExtractor(next_rid, startAddress, page);
             readRecord(fileHandle, recordDescriptor, next_rid, data);
-        }else{
+        } else {
             if(isInternalId(startAddress)){
                 lengthOfRecord = lengthOfRecord - 6*sizeof (char);
             }
@@ -526,7 +562,7 @@ namespace PeterDB {
         free(page);
         return 0;
     }
-
+    //checked
     void* RecordBasedFileManager::decoder(const std::vector<Attribute> &recordDescriptor, void* record, void *&data){
 
         int numberOfCols = recordDescriptor.size();
@@ -535,10 +571,14 @@ namespace PeterDB {
         int N = *(int *) record;
         std::vector<bool> nullIndicator;
         void* bitMapPointer = (int*) record + 1;
+        int nonNullCount = 0;
         for(int k = 0; k < numberOfCols; k++){
             bool isNull = isColValueNull(bitMapPointer, k);
             nullIndicator.push_back(isNull);
+            if(!isNull) nonNullCount++;
         }
+        assert(nonNullCount == N);
+
         int sizeOfData = calculateDataSize(recordDescriptor, record, nullIndicator);
 
         //Assign memory for data
@@ -550,7 +590,7 @@ namespace PeterDB {
 
         return data;
     }
-
+    //checked
     RC RecordBasedFileManager::copyRecordToData(const std::vector<Attribute> &recordDescriptor, void* data, void* record, const std::vector<bool> &nullIndicator){
         int numberOfCols = recordDescriptor.size();
         int bitMapSize = ceil((float)numberOfCols/8);
@@ -591,6 +631,7 @@ namespace PeterDB {
         }
         return 0;
     }
+    //checked
     int RecordBasedFileManager::calculateDataSize(const std::vector<Attribute> &recordDescriptor, void* record, const std::vector<bool> &nullIndicator){
         int sizeOfData = 0;
         int numberOfCols = recordDescriptor.size();
@@ -625,12 +666,15 @@ namespace PeterDB {
                 //Increase dataInsertionOffsetFromStartOfRecord offset by length of 4
                 dataInsertionOffsetFromStartOfRecord += sizeof(unsigned);
             }
+            if(sizeOfData > 10000) {
+                1;
+            }
             numNonNullCols += 1;
         }
         return sizeOfData;
     }
 
-
+    //checked
     RC RecordBasedFileManager::deleteRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const RID &rid) {
         int pageIndex = rid.pageNum;
@@ -638,10 +682,11 @@ namespace PeterDB {
         char* page = (char*)malloc(PAGE_SIZE);
         memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
+        //Return error if trying to delete a hole
+        if(is_slot_empty(page, slotNum)) return -1;
 
         int data_address_offset = getStartAddressOffset(slotNum);
         int record_address = *(int *)(page + data_address_offset);
-
         //Check if tombstone
         bool tombstone_flag = isTombStone(record_address);
 
@@ -656,7 +701,7 @@ namespace PeterDB {
         deleteGivenRecord(fileHandle, recordDescriptor, rid);
         return 0;
     }
-
+    //checked
     RC RecordBasedFileManager::deleteGivenRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const RID &rid) {
         int pageIndex = rid.pageNum;
@@ -665,21 +710,31 @@ namespace PeterDB {
         memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
 
-        int numSlots = 0;
-        memcpy(&numSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
-        int freeSpace = 0;
-        memcpy(&freeSpace, page + PAGE_SIZE - sizeof (unsigned ) , sizeof (unsigned ));
-        int data_address_offset = getStartAddressOffset(slotNum);
-        int len_address_offset = getLenAddressOffset(slotNum);
-        //Length of this record
-        int deleted_record_len = 0;
-        memcpy(&deleted_record_len, page + len_address_offset, sizeof (unsigned )); //pass
-        /*Put -1 in the length and start address of this record
-         *
-         * */
-        int recordDeleted = -1;
-        memcpy(page + len_address_offset, &recordDeleted, sizeof (unsigned ));
-        memcpy(page + data_address_offset, &recordDeleted, sizeof (unsigned ));
+        int *slotTable = (int *)(page + PAGE_SIZE);
+        int freeSpace = ((int *)slotTable)[-1];
+        int numSlots = ((int *)slotTable)[-2];
+        int deleted_record_len = ((int *)slotTable)[-2-2*slotNum+1];
+
+        ((int *)slotTable)[-2-2*slotNum] = -1;
+        ((int *)slotTable)[-2-2*slotNum+1] = -1;
+
+        if (false) {
+            int numSlots = 0;
+            memcpy(&numSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
+            int freeSpace = 0;
+            memcpy(&freeSpace, page + PAGE_SIZE - sizeof (unsigned ) , sizeof (unsigned ));
+            int data_address_offset = getStartAddressOffset(slotNum);
+            int len_address_offset = getLenAddressOffset(slotNum);
+            //Length of this record
+            int deleted_record_len = 0;
+            memcpy(&deleted_record_len, page + len_address_offset, sizeof (unsigned )); //pass
+            /*Put -1 in the length and start address of this record
+             *
+             * */
+            int recordDeleted = -1;
+            memcpy(page + len_address_offset, &recordDeleted, sizeof (unsigned ));
+            memcpy(page + data_address_offset, &recordDeleted, sizeof (unsigned ));
+        }
 
         /*
          * Move the records at the right of this to left.
@@ -688,8 +743,11 @@ namespace PeterDB {
         shiftRecordsLeft(page, numSlots, slotNum + 1, deleted_record_len);
 
         //Update freespace field
-        freeSpace = freeSpace - deleted_record_len;
-        memcpy(page + PAGE_SIZE - sizeof (unsigned ), &freeSpace, sizeof (unsigned));
+        ((int *)slotTable)[-1] = freeSpace - deleted_record_len;
+        if(false){
+            freeSpace = freeSpace - deleted_record_len;
+            memcpy(page + PAGE_SIZE - sizeof (unsigned ), &freeSpace, sizeof (unsigned));
+        }
         fileHandle.writePage(pageIndex, page);
         free(page);
         return 0;
@@ -699,6 +757,7 @@ namespace PeterDB {
      * Returns the start of data field address for given slot number
      * 1 for F, 1 for N, 2*SlotNum for each slot
      * */
+    //checked
     int RecordBasedFileManager::getStartAddressOffset(int slotNum){
         return (PAGE_SIZE - (2 + 2*slotNum)*sizeof (unsigned ));
     }
@@ -706,18 +765,26 @@ namespace PeterDB {
     /*
      * Returns the start of length field address for given slot number
      * */
+    //checked
     int RecordBasedFileManager::getLenAddressOffset(int slotNum){
         return (PAGE_SIZE - (2 + 2*slotNum - 1)*sizeof (unsigned ));
     }
 
     //If slot is empty, the length is -1, return true
     //else return false
+    //checked
     bool RecordBasedFileManager::is_slot_empty(char* page, int slotNum){
         int len = 0;
         memcpy(&len, page + PAGE_SIZE - (2 + 2*slotNum - 1)*sizeof (unsigned ), sizeof (unsigned ));
         if(len == -1) return true;
         return false;
     }
+
+    bool RecordBasedFileManager::is_slot_internal_id(char* page, int slotNum){
+        int addr = getStartAddressOffset(slotNum);
+        return(isInternalId(addr));
+    }
+    //checked
     RC RecordBasedFileManager::printRecord(const std::vector<Attribute> &recordDescriptor, const void *data,
                                            std::ostream &out) {
         int numberOfCols = recordDescriptor.size();
@@ -799,7 +866,7 @@ namespace PeterDB {
 //        out.write((char *)&str, sizeof(str));
         return 0;
     }
-
+    //checked
     RC RecordBasedFileManager::updateRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                             const void *data, const RID &rid) {
 
@@ -807,16 +874,18 @@ namespace PeterDB {
         //It will store the size of the record in the recordSize variable
         void * record = encoder(recordDescriptor, data, updatedRecordSize);
 
-        updateMiscRecord(fileHandle, recordDescriptor, record, updatedRecordSize, rid);
+        if(updateMiscRecord(fileHandle, recordDescriptor, record, updatedRecordSize, rid) != 0) return -1;
         return 0;
     }
-
+    //checked
     RC RecordBasedFileManager::updateMiscRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, void *updated_record, int updatedRecordSize, const RID &rid) {
         int pageIndex = rid.pageNum;
         int slotNum = rid.slotNum;
         char* page = (char*)malloc(PAGE_SIZE);
         memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
+        //Return error if it's a hole
+        if(is_slot_empty(page, slotNum)) return -1;
 
         int len_address = getLenAddressOffset(slotNum);
         int data_start_address = getStartAddressOffset(slotNum);
@@ -824,13 +893,14 @@ namespace PeterDB {
         int record_data_addr = 0;
         memcpy(&record_old_len, page + len_address, sizeof (unsigned ));
         memcpy(&record_data_addr, page + data_start_address, sizeof (unsigned ));
+
+        if(is_slot_empty(page, slotNum)) return -1;
+
         if(isTombStone(record_data_addr)){
             RID next_rid;
             tombStonePointerExtractor(next_rid, record_data_addr, page);
             updateMiscRecord(fileHandle, recordDescriptor, updated_record, updatedRecordSize, next_rid);
-            //When returned from updating the actual record, for updating the data of this
-            //tombstone pointer, the record size is 6, not th size of the 'updated data'
-            updatedRecordSize = 6*sizeof (char);
+            return 0;
         }
         bool is_internal = isInternalId(record_data_addr);
 
@@ -883,7 +953,7 @@ namespace PeterDB {
                  * ToDo: Add record id info to this data*/
                 //check if it was previously stored in an internal id
                 RID original_rid;
-                char* internal_old_record;
+                char* internal_old_record = (char*)malloc(record_old_len - 6);
                 if(is_internal){
                     internalRecordExtractor(original_rid, record_data_addr, record_old_len, page, internal_old_record);
                 }else{
@@ -946,27 +1016,46 @@ namespace PeterDB {
 
         return 0;
     }
-
+    //checked
     bool RecordBasedFileManager::is_slot_a_tombstone(int slotnum, void* page){
         int addr = *(int*)((char*)page + getStartAddressOffset(slotnum));
+        //It's a hole
+        if(addr == -1) return false;
         return isTombStone(addr);
     }
-
+    //checked
     bool RecordBasedFileManager::isTombStone(int address){
+        //It's a hole
+        if(address == -1) return false;
+
         if((address & (1 << 31)) == 0) return false;
         return true;
     }
+    //checked
     bool RecordBasedFileManager::isInternalId(int address){
+        //It's a hole
+        if(address == -1) return false;
         if((address & (1 << 30)) == 0) return false;
         return true;
     }
+    //checked
     RC RecordBasedFileManager::tombStonePointerExtractor(RID &rid, int addr, char* page){
         addr = addr & ((1 << 17) - 1);
         memcpy(&rid.pageNum, page+ addr,sizeof (unsigned ));
         memcpy(&rid.slotNum,page+addr+sizeof (unsigned ),2*sizeof (char));
         return 0;
     }
-    RC RecordBasedFileManager::internalRecordExtractor(RID &real_rid, int addr, int len, char* page, char* record){
+    RC RecordBasedFileManager::originalRidExtractor_fromInternalId( char* page, RID given_rid, RID &original_rid){
+        int addr = *(int*)(page + getStartAddressOffset(given_rid.slotNum));
+        addr = addr & ((1 << 17) - 1);
+        int len = *(int*)(page + getLenAddressOffset(given_rid.slotNum));
+        if(len == -1) return -1;
+        memcpy(&original_rid.pageNum, page + addr + len - sizeof (unsigned ) - 2*sizeof (char ), sizeof (unsigned ));
+        memcpy(&original_rid.slotNum, page + addr + len - 2*sizeof (char ), 2*sizeof (char));
+        return 0;
+    }
+    //checked
+    RC RecordBasedFileManager::internalRecordExtractor(RID &real_rid, int addr, int len, char* page, char* &record){
         addr = addr & ((1 << 17) - 1);
         //The actual record
         memcpy(record, page + addr, len - 6);
@@ -976,7 +1065,7 @@ namespace PeterDB {
         memcpy(&real_rid.slotNum, page + addr + len - 2*sizeof (char ), 2*sizeof (char));
         return 0;
     }
-
+    //checked
     RC RecordBasedFileManager::readAttributeFromRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                              const RID &rid, const std::string &attributeName, void *&data, void *data_record) {
         //assert(data_record != nullptr);
@@ -1041,7 +1130,7 @@ namespace PeterDB {
         }
         return 0;
     }
-
+    //checked
     RC RecordBasedFileManager::readAttribute(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                              const RID &rid, const std::string &attributeName, void *&data) {
         //Read the record given by rid
@@ -1082,12 +1171,32 @@ namespace PeterDB {
             rid.pageNum = currPageIndex;
             rid.slotNum = currSlotNum;
         }
+        //If hole, don't read it and move forward
+        bool is_hole = rbfm.is_slot_empty(page, rid.slotNum);
+        if(is_hole){
+            int rc = getNextRecord(rid, data);
+            return rc;
+        }
+//        if(is_hole && getNextRecord(rid, data) == RBFM_EOF) return RBFM_EOF;
+
         bool is_tombstone = rbfm.is_slot_a_tombstone(rid.slotNum, page);
         //If it's a tombstone, don't read it and move forward
-        if (is_tombstone && getNextRecord(rid, data) == RBFM_EOF) return RBFM_EOF;
+        if(is_tombstone){
+            int rc = getNextRecord(rid, data);
+            return rc;
+        }
+        //if (is_tombstone && getNextRecord(rid, data) == RBFM_EOF) return RBFM_EOF;
+
+        bool is_internal = rbfm.is_slot_internal_id(page, rid.slotNum);
 
         if(is_record_satisfiable(rid)){
-            create_data_with_required_attributes(rid, data);
+            create_data_with_required_attributes(rid, data, is_internal);
+            if(is_internal){
+                RID original_rid;
+                rbfm.originalRidExtractor_fromInternalId(page, rid, original_rid);
+                rid.slotNum = original_rid.slotNum;
+                rid.pageNum = original_rid.pageNum;
+            }
         } else if(getNextRecord(rid, data) == RBFM_EOF) {
             return RBFM_EOF;
         }
@@ -1106,7 +1215,7 @@ namespace PeterDB {
         return totalSize;
     }
 
-    RC RBFM_ScanIterator::create_data_with_required_attributes(const RID &rid, void *&data){
+    RC RBFM_ScanIterator::create_data_with_required_attributes(const RID &rid, void *&data, bool is_internal){
 
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         void *data_record = nullptr; rbfm.readRecord(fileHandle, recordDescriptor, rid, data_record);
@@ -1144,6 +1253,11 @@ namespace PeterDB {
                 memcpy((char*)data + offset, attr_data, sizeof (unsigned ) + len);
                 offset += sizeof (unsigned ) + len;
             }
+        }
+
+        //If it's an internal id, extract the original rid and store in this rid
+        if(is_internal){
+
         }
         return 0;
     }
@@ -1236,7 +1350,6 @@ namespace PeterDB {
             }
         }else if(attr->type == TypeVarChar){
             int read_val_len = *(int*)((char*)attr_val);
-
             int given_val_len = *(int*)(value);
             char read_val[read_val_len + 1];
             char given_val[given_val_len + 1];

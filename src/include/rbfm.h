@@ -79,7 +79,7 @@ namespace PeterDB {
         bool set_success = false;
 
         bool is_record_satisfiable(const RID &rid);
-        RC create_data_with_required_attributes(const RID &rid, void *&data);
+        RC create_data_with_required_attributes(const RID &rid, void *&data, bool is_internal);
         int get_sizeof_required_attributes_data(const RID &rid, void *&bitmap);
         AttrType get_attribute_type(std::string attributeName);
         int size_with_required_attributes(const RID &rid);
@@ -154,6 +154,10 @@ namespace PeterDB {
         RC readAttributeFromRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                    const RID &rid, const std::string &attributeName, void *&data, void *data_record);
         bool isColValueNull(const void *data, int k);
+        bool is_slot_empty(char* page, int slotNum);
+        bool is_slot_internal_id(char* page, int slotNum);
+        RC internalRecordExtractor(RID &real_rid, int addr, int len, char* page, char* &record);
+        RC originalRidExtractor_fromInternalId( char* page, RID given_rid, RID &original_rid);
     private:
 
         int calculateRecordSize(int N, const std::vector<Attribute> &recordDescriptor, const void *data, const std::vector<bool> &nullIndicator);
@@ -165,7 +169,6 @@ namespace PeterDB {
         int insertDataNewPage(FileHandle &fileHandle, int recordSize, void* record);
         int findFreePageIndex(FileHandle &fileHandle, int recordSize);
         int insertDataByPageIndex(FileHandle &fileHandle, int pageIndex, void* record, int recordSize);
-        bool is_slot_empty(char* page, int slotNum);
         int getStartAddressOffset(int slotNum);
         int getLenAddressOffset(int slotNum);
         int free_slot_num(char* page, int numSlots);
@@ -175,7 +178,7 @@ namespace PeterDB {
         bool isTombStone(int address);
         bool isInternalId(int address);
         RC tombStonePointerExtractor(RID &rid, int addr, char* page);
-        RC internalRecordExtractor(RID &real_rid, int addr, int len, char* page, char* record);
+        //RC internalRecordExtractor(RID &real_rid, int addr, int len, char* page, char* &record);
         RC insertMiscData(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,void *record, int recordSize, RID &rid);
         RC updateMiscRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, void *record, int updatedRecordSize, const RID &rid);
         RC deleteGivenRecord(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const RID &rid);

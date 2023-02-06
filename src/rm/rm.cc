@@ -285,6 +285,7 @@ namespace PeterDB {
         //Delete the file. Return -1 if error occurred
         if(rbfm.destroyFile(tableName) != 0) return -1;
         //Find the table id and rid for deleting this table
+        //const std::vector<std::string> attributeNames_table = {"table-id", "system"};
         const std::vector<std::string> attributeNames_table = {"table-id"};
         void* value;
         prepare_value_for_varchar(tableName, value);
@@ -296,9 +297,14 @@ namespace PeterDB {
         if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF) return -1;
         //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
         int table_id = *(int*)((char*)data + sizeof (char));
-
+        //int sys = *(int*)((char*)data + sizeof (char) + sizeof (unsigned ));
         //Found the table-id
-        //Delete this record from 'tables' table
+        //If this is system table, return error
+//        if(sys == 1){
+//            rbfm_ScanIterator.close();
+//            return -1;
+//        }
+        //else Delete this record from 'tables' table
         if(rbfm.deleteRecord(table_handle, getTableAttribute(), rid)) return -1;
         rbfm_ScanIterator.close();
         free(value);
@@ -403,7 +409,7 @@ namespace PeterDB {
         if(rbfm.openFile(tableName, curr_file_handle) != 0) return -1;
 
         std::vector<Attribute> recordDescriptor;
-        getAttributes(tableName, recordDescriptor);
+        if(getAttributes(tableName, recordDescriptor)) return -1;
         if(rbfm.deleteRecord(curr_file_handle, recordDescriptor, rid)) return -1;
         if(rbfm.closeFile(curr_file_handle)) return -1;
 
@@ -424,14 +430,12 @@ namespace PeterDB {
     }
 
     RC RelationManager::readTuple(const std::string &tableName, const RID &rid, void *data) {
-        //data = nullptr;
-
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         FileHandle curr_file_handle;
         //Return error if file does not exist
         if(rbfm.openFile(tableName, curr_file_handle) != 0) return -1;
         std::vector<Attribute> recordDescriptor;
-        getAttributes(tableName, recordDescriptor);
+        if(getAttributes(tableName, recordDescriptor)) return -1;
 
         if(rbfm.readRecord(curr_file_handle, recordDescriptor, rid, data)) return -1;
         if(rbfm.closeFile(curr_file_handle)) return -1;
