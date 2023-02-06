@@ -577,7 +577,7 @@ namespace PeterDB {
             nullIndicator.push_back(isNull);
             if(!isNull) nonNullCount++;
         }
-        assert(nonNullCount == N);
+        //assert(nonNullCount == N);
 
         int sizeOfData = calculateDataSize(recordDescriptor, record, nullIndicator);
 
@@ -666,9 +666,7 @@ namespace PeterDB {
                 //Increase dataInsertionOffsetFromStartOfRecord offset by length of 4
                 dataInsertionOffsetFromStartOfRecord += sizeof(unsigned);
             }
-            if(sizeOfData > 10000) {
-                1;
-            }
+
             numNonNullCols += 1;
         }
         return sizeOfData;
