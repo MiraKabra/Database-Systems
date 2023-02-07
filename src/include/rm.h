@@ -115,6 +115,7 @@ namespace PeterDB {
         std::vector<Attribute> getTableAttribute();
         std::vector<Attribute> getColumnAttribute();
         RC prepare_value_for_varchar(const std::string &str, void* &value);
+        bool isSystemTable(const std::string &tableName);
     protected:
         RelationManager();                                                  // Prevent construction
         ~RelationManager();                                                 // Prevent unwanted destruction

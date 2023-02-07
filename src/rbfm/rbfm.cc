@@ -1313,11 +1313,14 @@ namespace PeterDB {
     bool RBFM_ScanIterator::is_record_satisfiable(const RID &rid){
         if(compOp == NO_OP) return true;
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+
+
         void* read_attr = nullptr;
         rbfm.readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, read_attr);
         // find attr in recordDescriptor with name = conditionAttribute
-        auto attr = find_if(recordDescriptor.begin(), recordDescriptor.end(),
-                         [&](const Attribute& attr) {return attr.name == conditionAttribute;}
+        auto attr = find_if(
+                recordDescriptor.begin(), recordDescriptor.end(),
+                [&](const Attribute& attr) {return attr.name == conditionAttribute;}
         );
         if (attr == recordDescriptor.end()) {
             return false;

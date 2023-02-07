@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <cmath>
 #include <cstring>
+#include <sys/stat.h>
 
 namespace PeterDB {
     PagedFileManager &PagedFileManager::instance() {
@@ -36,9 +37,16 @@ namespace PeterDB {
         return 0;
     }
 
+    bool PagedFileManager::fileExists(const std::string &fileName){
+        struct stat stFileInfo{};
+
+        return stat(fileName.c_str(), &stFileInfo) == 0;
+    }
     RC PagedFileManager::destroyFile(const std::string &fileName) {
+        if(!fileExists(fileName)) return -1;
 
         int return_val = remove(fileName.c_str());
+
         //if not successful, the return_val wil be nonzero
         return return_val;
     }
