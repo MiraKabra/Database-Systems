@@ -1071,7 +1071,19 @@ namespace PeterDB {
         int bitMapSize = ceil((float)numberOfCols/8);
 
         bool is_null = false;
-        int index_of_asked_attribute;
+        int index_of_asked_attribute = -1;
+
+        int N = 0;
+        if(false){
+            std::vector<bool> nullIndicator;
+            for(int k = 0; k < numberOfCols; k++){
+                bool isNull = isColValueNull(data_record, k);
+                nullIndicator.push_back(isNull);
+                if(isNull) continue;
+                N++; // Increase N for non null value
+            }
+        }
+
 
         //check if the asked attributeName value is null
         for(int i = 0; i < numberOfCols; i++){
@@ -1081,25 +1093,36 @@ namespace PeterDB {
                 if(isColValueNull(data_record, i)){
                     is_null = true;
                 }
+//                if(nullIndicator.at(i)){
+//                    is_null = true;
+//                }
                 break;
             }
         }
+        if(index_of_asked_attribute == -1) return -1;
         if(is_null) {
             if(data == nullptr) {
                 data = malloc(sizeof (char));
                 memset(data, 0, sizeof (char));
             }
+            *(unsigned char *)data = 128u;
+
             // attribute is null
-            unsigned char bitmap = 128;
-            memcpy(data, &bitmap, sizeof (char));
-            return -1;
+            if(false) {
+                unsigned char bitmap = 128;
+                memcpy(data, &bitmap, sizeof(char));
+            }
+            return 0;
         }
         // the attribute value is not null
         char* pointer = (char*)data_record;
         int offset = bitMapSize;
 
-        for(int j = 0; j <= index_of_asked_attribute; j++){
-            if(j == index_of_asked_attribute) break;
+        for(int j = 0; j < index_of_asked_attribute; j++){
+            //if(nullIndicator.at(j)) continue;
+            if(isColValueNull(data_record, j)){
+                continue;
+            }
             if(recordDescriptor.at(j).type != TypeVarChar){
                 offset += sizeof (unsigned );
             }else{
@@ -1132,7 +1155,8 @@ namespace PeterDB {
     RC RecordBasedFileManager::readAttribute(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor,
                                              const RID &rid, const std::string &attributeName, void *&data) {
         //Read the record given by rid
-        void *data_record = nullptr; readRecord(fileHandle, recordDescriptor, rid, data_record);
+        void *data_record = nullptr;
+        if(readRecord(fileHandle, recordDescriptor, rid, data_record)) return -1;
         return readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName, data, data_record);
     }
 
@@ -1253,10 +1277,6 @@ namespace PeterDB {
             }
         }
 
-        //If it's an internal id, extract the original rid and store in this rid
-        if(is_internal){
-
-        }
         return 0;
     }
 
