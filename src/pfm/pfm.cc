@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <cmath>
 #include <cstring>
+#include <sys/stat.h>
+#include <iostream>
 
 namespace PeterDB {
     PagedFileManager &PagedFileManager::instance() {
@@ -36,9 +38,16 @@ namespace PeterDB {
         return 0;
     }
 
+    bool PagedFileManager::fileExists(const std::string &fileName){
+        struct stat stFileInfo{};
+
+        return stat(fileName.c_str(), &stFileInfo) == 0;
+    }
     RC PagedFileManager::destroyFile(const std::string &fileName) {
+        if(!fileExists(fileName)) return -1;
 
         int return_val = remove(fileName.c_str());
+
         //if not successful, the return_val wil be nonzero
         return return_val;
     }
@@ -49,6 +58,13 @@ namespace PeterDB {
 
         FILE* pFile;
         pFile = fopen(fileName.c_str(), "rb");
+        //printf("opened file: %s \n", fileName.c_str());
+        if (NULL == pFile){
+            fprintf(stderr,
+                    "could not open: %s. %s\n",
+                    fileName.c_str(),
+                    strerror(errno));
+        }
         // This file does not exist
         if(pFile == nullptr){
             return -1;
@@ -77,6 +93,7 @@ namespace PeterDB {
         //If not closed properly, EOF(-1) is returned
         if(return_val != 0) return return_val;
         fileHandle.setFile(nullptr);
+        //printf("Closed file \n");
         return 0;
     }
 
@@ -203,7 +220,19 @@ namespace PeterDB {
 
     unsigned FileHandle::getNumberOfPages() {
         FILE* pFile = this->getFile();
-        fseek(pFile, 0, SEEK_END);
+
+        if (NULL == pFile){
+            fprintf(stderr,
+                    "could not open: . %s\n",
+                    strerror(errno));
+        }
+        try{
+            fseek(pFile, 0, SEEK_END);
+        }catch (int e)
+        {
+            std::cout << "An exception occurred. Exception Nr. " << e << '\n';
+        }
+
         long int size_of_file = ftell(pFile);
         //No hidden page case
         if(size_of_file == 0) return 0;

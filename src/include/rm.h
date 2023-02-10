@@ -3,7 +3,6 @@
 
 #include <string>
 #include <vector>
-
 #include "src/include/rbfm.h"
 
 namespace PeterDB {
@@ -20,6 +19,16 @@ namespace PeterDB {
         RC getNextTuple(RID &rid, void *data);
 
         RC close();
+        RC setScanner(FileHandle &fileHandle,
+                      const std::vector<Attribute> &recordDescriptor,
+                      const std::string &conditionAttribute,
+                      const CompOp compOp,
+                      const void *value,
+                      const std::vector<std::string> &attributeNames);
+    private:
+        RBFM_ScanIterator rbfm_ScanIterator;
+        FileHandle fileHandle;
+        bool set_success = false;
     };
 
     // RM_IndexScanIterator is an iterator to go through index entries
@@ -31,11 +40,20 @@ namespace PeterDB {
         // "key" follows the same format as in IndexManager::insertEntry()
         RC getNextEntry(RID &rid, void *key);    // Get next matching entry
         RC close();                              // Terminate index scan
+
     };
 
     // Relation Manager
     class RelationManager {
     public:
+        static int tableCount;
+        std::string table = "Tables";
+        std::string column = "Columns";
+        std::string table_file = "Tables";
+        std::string column_file = "Columns";
+        FileHandle table_handle;
+        FileHandle column_handle;
+        bool catalog_exists = false;
         static RelationManager &instance();
 
         RC createCatalog();
@@ -89,7 +107,15 @@ namespace PeterDB {
                      bool lowKeyInclusive,
                      bool highKeyInclusive,
                      RM_IndexScanIterator &rm_IndexScanIterator);
+        bool fileExists(const std::string &fileName);
 
+    private:
+        RC createDataForTables_table(int table_id, std::string table_name,  int system, void* &data);
+        RC createDataForColumns_table(int table_id, std::string column_name, int column_type, int column_length, int column_position, void* &data);
+        std::vector<Attribute> getTableAttribute();
+        std::vector<Attribute> getColumnAttribute();
+        RC prepare_value_for_varchar(const std::string &str, void* &value);
+        bool isSystemTable(const std::string &tableName);
     protected:
         RelationManager();                                                  // Prevent construction
         ~RelationManager();                                                 // Prevent unwanted destruction
