@@ -373,14 +373,14 @@ namespace PeterDB {
 
         //Or start looking from first page
         //Don't need to check the last page
-        for(int i = 0; i < pageNums - 1; i++){
-            fileHandle.readPage(i, page);
-            memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
-            if(freeSpace >= requiredSize){
-                free(page);
-                return i;
-            }
-        }
+//        for(int i = 0; i < pageNums - 1; i++){
+//            fileHandle.readPage(i, page);
+//            memcpy(&freeSpace, page + start_address_of_freeSpace, sizeof(unsigned ));
+//            if(freeSpace >= requiredSize){
+//                free(page);
+//                return i;
+//            }
+//        }
         free(page);
         //If no such page was found, return -1
         return -1;
@@ -1071,7 +1071,6 @@ namespace PeterDB {
         int bitMapSize = ceil((float)numberOfCols/8);
 
         bool is_null = false;
-        int index_of_asked_attribute = -1;
 
         int N = 0;
         if(false){
@@ -1085,10 +1084,11 @@ namespace PeterDB {
         }
 
 
+        int index_of_asked_attribute = -1;
         //check if the asked attributeName value is null
         for(int i = 0; i < numberOfCols; i++){
             Attribute attr = recordDescriptor.at(i);
-            if(strcmp(attr.name.c_str(), attributeName.c_str()) == 0){
+            if(attr.name == attributeName){
                 index_of_asked_attribute = i;
                 if(isColValueNull(data_record, i)){
                     is_null = true;
@@ -1255,6 +1255,7 @@ namespace PeterDB {
         int offset = 0;
         //copy bitmap
         memcpy((char*)data + offset, bitmap, bitMapSize);
+        free(bitmap);
         offset += bitMapSize;
 
         for(int k = 0; k < attributeNames.size(); k++){
@@ -1264,7 +1265,7 @@ namespace PeterDB {
             int rc = rbfm.readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName,
                                                   read_attr, data_record);
             char* attr_data = (char*)read_attr + sizeof (char);
-            if(rc == -1) {
+            if(*(unsigned char*)(read_attr) == 128u){
                 continue;
             }
             if (type == TypeInt || type == TypeReal){
@@ -1291,14 +1292,19 @@ namespace PeterDB {
         totalSize += bitMapSize;
 
         std::vector<std::bitset<8>> bitMap(bitMapSize);
+        if (bitmap == nullptr) {
+            bitmap = malloc(bitMapSize * sizeof(char));
+        }
+        memset(bitmap, 0, bitMapSize*sizeof (char));
+
         for(int i = 0; i < attributeNames.size(); i++){
             std::string attributeName = attributeNames.at(i);
             AttrType type = get_attribute_type(attributeName);
             void* read_attr = nullptr;
             int rc = rbfm.readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName,
                                                   read_attr, data_record);
-            if(rc == -1){
-                bitMap[i/8].set(i%8);
+            if(*(unsigned char*)(read_attr) == 128u){
+                bitMap[i/8].set(8 - i%8 - 1);
                 continue;
             }
             if(type == TypeInt || type == TypeReal){
@@ -1309,9 +1315,7 @@ namespace PeterDB {
             }
             free(read_attr);
         }
-        if (bitmap == nullptr) {
-            bitmap = malloc(bitMapSize * sizeof(char));
-        }
+
         memset(bitmap, 0, bitMapSize*sizeof (char));
         for(int i = 0; i < bitMapSize; i++) {
             char* pointer = (char*)&bitMap[i];
@@ -1324,7 +1328,7 @@ namespace PeterDB {
 
         for(int k = 0; k < recordDescriptor.size(); k++){
             Attribute attr = recordDescriptor.at(k);
-            if(strcmp(attr.name.c_str(), attributeName.c_str()) == 0) return attr.type;
+            if(attr.name == attributeName) return attr.type;
         }
         //random return just because we should return an Attrtype
         return TypeInt;
@@ -1337,6 +1341,9 @@ namespace PeterDB {
 
         void* read_attr = nullptr;
         rbfm.readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, read_attr);
+        if(*(unsigned char *)read_attr == 128u) {
+            return false;
+        }
         // find attr in recordDescriptor with name = conditionAttribute
         auto attr = find_if(
                 recordDescriptor.begin(), recordDescriptor.end(),

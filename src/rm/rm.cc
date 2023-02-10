@@ -300,6 +300,7 @@ namespace PeterDB {
         rbfm_ScanIterator.close();
         //Found the table-id
         //If this is system table return true;
+        free(data);
         if(sys == 1){
             return true;
         }
@@ -330,6 +331,7 @@ namespace PeterDB {
         int sys = *(int*)((char*)data + sizeof (char) + sizeof (unsigned ));
         //Found the table-id
         //If this is system table, return error
+        free(data);
         if(sys == 1){
             rbfm_ScanIterator.close();
             return -1;
@@ -343,9 +345,14 @@ namespace PeterDB {
         attributeNames_column.push_back("table-id");
         if(rbfm.scan(column_handle, getColumnAttribute(), "table-id", EQ_OP, &table_id, attributeNames_column, rbfm_ScanIterator)) return -1;
         bool found = false;
+        data = nullptr;
         while (rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
             found = true;
             if(rbfm.deleteRecord(column_handle, getColumnAttribute(), rid)) return -1;
+            data = nullptr;
+        }
+        if(data != nullptr){
+            free(data);
         }
         if(rbfm.destroyFile(tableName) != 0) return -1;
         rbfm_ScanIterator.close();
@@ -385,7 +392,7 @@ namespace PeterDB {
         //Found the table-id
         rbfm_ScanIterator.close();
         free(value);
-
+        free(data);
         //Now find the entries with this table-id in 'columns' table one by one and add them to the attrs vector
         std::vector<std::string> attributeNames_column;
         attributeNames_column.push_back("column-name");
@@ -394,6 +401,7 @@ namespace PeterDB {
 
         if(rbfm.scan(column_handle, getColumnAttribute(), "table-id", EQ_OP, &table_id, attributeNames_column, rbfm_ScanIterator)) return -1;
 
+        data = nullptr;
 
         while (rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
             int offset = sizeof(char);
@@ -416,7 +424,9 @@ namespace PeterDB {
             data = nullptr;
         }
         rbfm_ScanIterator.close();
-
+        if(data != nullptr){
+            free(data);
+        }
         return 0;
     }
 
@@ -468,9 +478,15 @@ namespace PeterDB {
         //Return error if file does not exist
         if(rbfm.openFile(tableName, curr_file_handle) != 0) return -1;
         std::vector<Attribute> recordDescriptor;
-        if(getAttributes(tableName, recordDescriptor)) return -1;
+        if(getAttributes(tableName, recordDescriptor)){
+            if(rbfm.closeFile(curr_file_handle)) return -1;
+            return -1;
+        }
 
-        if(rbfm.readRecord(curr_file_handle, recordDescriptor, rid, data)) return -1;
+        if(rbfm.readRecord(curr_file_handle, recordDescriptor, rid, data)){
+            if(rbfm.closeFile(curr_file_handle)) return -1;
+            return -1;
+        }
         if(rbfm.closeFile(curr_file_handle)) return -1;
 
         return 0;

@@ -57,6 +57,13 @@ namespace PeterDB {
 
         FILE* pFile;
         pFile = fopen(fileName.c_str(), "rb");
+        //printf("opened file: %s \n", fileName.c_str());
+        if (NULL == pFile){
+            fprintf(stderr,
+                    "could not open: %s. %s\n",
+                    fileName.c_str(),
+                    strerror(errno));
+        }
         // This file does not exist
         if(pFile == nullptr){
             return -1;
@@ -85,6 +92,7 @@ namespace PeterDB {
         //If not closed properly, EOF(-1) is returned
         if(return_val != 0) return return_val;
         fileHandle.setFile(nullptr);
+        //printf("Closed file \n");
         return 0;
     }
 
