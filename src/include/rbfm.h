@@ -62,11 +62,12 @@ namespace PeterDB {
         // a satisfying record needs to be fetched from the file.
         // "data" follows the same format as RecordBasedFileManager::insertRecord().
         RC getNextRecord(RID &rid, void* &data);
-
+        RC getNextRecord_copy(RID &rid, void* &data);
         RC close();
         RC setScanner(FileHandle &fileHandle, const std::vector<Attribute> &recordDescriptor, const std::string &conditionAttribute
                 , const CompOp compOp, const void* &value, std::vector<std::string> attributeNames);
     private:
+        int totalPages = 0;
         int currPageIndex;
         int currSlotNum;
         char* page;

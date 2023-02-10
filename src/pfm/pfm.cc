@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstring>
 #include <sys/stat.h>
+#include <iostream>
 
 namespace PeterDB {
     PagedFileManager &PagedFileManager::instance() {
@@ -219,7 +220,19 @@ namespace PeterDB {
 
     unsigned FileHandle::getNumberOfPages() {
         FILE* pFile = this->getFile();
-        fseek(pFile, 0, SEEK_END);
+
+        if (NULL == pFile){
+            fprintf(stderr,
+                    "could not open: . %s\n",
+                    strerror(errno));
+        }
+        try{
+            fseek(pFile, 0, SEEK_END);
+        }catch (int e)
+        {
+            std::cout << "An exception occurred. Exception Nr. " << e << '\n';
+        }
+
         long int size_of_file = ftell(pFile);
         //No hidden page case
         if(size_of_file == 0) return 0;

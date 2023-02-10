@@ -1171,9 +1171,9 @@ namespace PeterDB {
         return rc;
     }
     //have not taken care of tombstone yet
-    RC RBFM_ScanIterator::getNextRecord(RID &rid, void* &data) {
+    RC RBFM_ScanIterator::getNextRecord_copy(RID &rid, void* &data) {
 
-        int totalPages = fileHandle.getNumberOfPages();
+        int totalPages = this->totalPages;
         if(totalPages == 0) return RBFM_EOF;
         currSlotNum++;
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
@@ -1224,6 +1224,60 @@ namespace PeterDB {
         }
         return 0;
     }
+
+
+    RC RBFM_ScanIterator::getNextRecord(RID &rid, void* &data) {
+
+        int totalPages = this->totalPages;
+        if(totalPages == 0) return RBFM_EOF;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        while(true){
+            this->currSlotNum++;
+            int curr_page_totalSlots = 0;
+            memcpy(&curr_page_totalSlots, page + PAGE_SIZE - 2*sizeof (unsigned ) , sizeof (unsigned ));
+
+            if(this->currSlotNum > curr_page_totalSlots){
+                this->currPageIndex++;
+                if(this->currPageIndex + 1 > totalPages){
+                    return RBFM_EOF;
+                }
+                this->currSlotNum = 1;
+                fileHandle.readPage(currPageIndex, page);
+                rid.pageNum = currPageIndex;
+                rid.slotNum = currSlotNum;
+            }else{
+                rid.pageNum = currPageIndex;
+                rid.slotNum = currSlotNum;
+            }
+            //If hole, don't read it and move forward
+            bool is_hole = rbfm.is_slot_empty(page, rid.slotNum);
+            if(is_hole){
+                continue;
+            }
+//        if(is_hole && getNextRecord(rid, data) == RBFM_EOF) return RBFM_EOF;
+            bool is_tombstone = rbfm.is_slot_a_tombstone(rid.slotNum, page);
+            //If it's a tombstone, don't read it and move forward
+            if(is_tombstone){
+                continue;
+            }
+            //if (is_tombstone && getNextRecord(rid, data) == RBFM_EOF) return RBFM_EOF;
+            bool is_internal = rbfm.is_slot_internal_id(page, rid.slotNum);
+            if(is_record_satisfiable(rid)){
+                create_data_with_required_attributes(rid, data, is_internal);
+                if(is_internal){
+                    RID original_rid;
+                    rbfm.originalRidExtractor_fromInternalId(page, rid, original_rid);
+                    rid.slotNum = original_rid.slotNum;
+                    rid.pageNum = original_rid.pageNum;
+                }
+                return 0;
+            }else{
+                continue;
+            }
+        }
+        return 0;
+    }
+
 
     int RBFM_ScanIterator::size_with_required_attributes(const RID &rid){
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
@@ -1402,6 +1456,9 @@ namespace PeterDB {
         if(set_success){
             free(page);
         }
+        this->totalPages = 0;
+        this->currPageIndex = -1;
+        this->currSlotNum = 0;
         set_success = false;
         return 0;
     }
@@ -1415,9 +1472,10 @@ namespace PeterDB {
         this->value = value;
         this->currPageIndex = -1;
         this->currSlotNum = 0;
+        this->totalPages = this->fileHandle.getNumberOfPages();
         this->page = (char*)malloc(PAGE_SIZE);
         memset(page, 0, PAGE_SIZE);
-        if(fileHandle.getNumberOfPages() != 0){
+        if(this->totalPages != 0){
             currPageIndex++;
             if(fileHandle.readPage(currPageIndex, page) == -1) return -1;
         }
