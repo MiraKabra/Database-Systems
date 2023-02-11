@@ -41,9 +41,11 @@ Same for records other than internal record and tombstone pointers.
 
 #### Internal record:
 
+![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-2/report/internal%20record.png?raw=true)
 
 #### Tombstone pointer:
 
+![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-2/report/tombstone%20pointer.png?raw=true)
 
 - Describe how you store a null field.
 
