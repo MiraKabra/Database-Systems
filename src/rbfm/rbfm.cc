@@ -697,6 +697,7 @@ namespace PeterDB {
          * It does not matter if it is internal id or not,
          * the deleteGivenRecord function will simply delete it*/
         deleteGivenRecord(fileHandle, recordDescriptor, rid);
+        free(page);
         return 0;
     }
     //checked
@@ -1339,7 +1340,7 @@ namespace PeterDB {
             }
             free(read_attr);
         }
-
+        free(data_record);
         return 0;
     }
 
@@ -1383,6 +1384,7 @@ namespace PeterDB {
             char* pointer = (char*)&bitMap[i];
             memcpy((char*)bitmap + i, pointer, sizeof (char));
         }
+        free(data_record);
         return totalSize;
     }
 
