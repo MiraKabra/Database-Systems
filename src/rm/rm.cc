@@ -88,13 +88,19 @@ namespace PeterDB {
         RID rid;
         //Enter the "Tables" and "Columns" entries
         for(int i = 0; i < 2; i++){
-            if(rbfm.insertRecord(table_handle, getTableAttribute(), table_entry[i], rid)) return -1;
+            if(rbfm.insertRecord(table_handle, getTableAttribute(), table_entry[i], rid)){
+                free(table_entry[i]);
+                return -1;
+            }
             free(table_entry[i]);
         }
 
         for(int i = 0; i < 9; i++) {
             if(i == 3) continue;
-            if(rbfm.insertRecord(column_handle, getColumnAttribute(), column_entry[i], rid)) return -1;
+            if(rbfm.insertRecord(column_handle, getColumnAttribute(), column_entry[i], rid)){
+                free(column_entry[i]);
+                return -1;
+            }
             free(column_entry[i]);
         }
         RelationManager::tableCount += 2;
@@ -266,7 +272,10 @@ namespace PeterDB {
         //Insert data in 'Tables' table
         void* data_for_tables_table = nullptr;
         createDataForTables_table(RelationManager::tableCount, tableName, 0, data_for_tables_table);
-        if(rbfm.insertRecord(table_handle, getTableAttribute(), data_for_tables_table, rid)) return -1;
+        if(rbfm.insertRecord(table_handle, getTableAttribute(), data_for_tables_table, rid)){
+            free(data_for_tables_table);
+            return -1;
+        }
         free(data_for_tables_table);
         //Insert data in 'Columns' table
         for(int i = 0; i < attrs.size(); i++){
@@ -340,6 +349,7 @@ namespace PeterDB {
             if(data != nullptr){
                 free(data);
             }
+            rbfm_ScanIterator.close();
             return -1;
         }
         //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
@@ -360,6 +370,7 @@ namespace PeterDB {
             if(value != nullptr){
                 free(value);
             }
+            rbfm_ScanIterator.close();
             return -1;
         }
         rbfm_ScanIterator.close();
@@ -376,6 +387,7 @@ namespace PeterDB {
                 if(data != nullptr){
                     free(data);
                 }
+                rbfm_ScanIterator.close();
                 return -1;
             }
 
@@ -385,7 +397,10 @@ namespace PeterDB {
         if(data != nullptr){
             free(data);
         }
-        if(rbfm.destroyFile(tableName) != 0) return -1;
+        if(rbfm.destroyFile(tableName) != 0){
+            rbfm_ScanIterator.close();
+            return -1;
+        }
         rbfm_ScanIterator.close();
 
         return 0;
