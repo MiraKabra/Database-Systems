@@ -103,6 +103,11 @@ namespace PeterDB {
             }
             free(column_entry[i]);
         }
+        //As it is not freed in the loop above
+        if(column_entry[3] != nullptr){
+            free(column_entry[3]);
+        }
+
         RelationManager::tableCount += 2;
         this->catalog_exists = true;
         return 0;

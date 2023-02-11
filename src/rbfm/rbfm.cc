@@ -1157,7 +1157,12 @@ namespace PeterDB {
         //Read the record given by rid
         void *data_record = nullptr;
         if(readRecord(fileHandle, recordDescriptor, rid, data_record)) return -1;
-        return readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName, data, data_record);
+        if(readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName, data, data_record)){
+            free(data_record);
+            return -1;
+        }
+        free(data_record);
+        return 0;
     }
 
     //Returns an iterator called rbfm_ScanIterator
@@ -1318,8 +1323,10 @@ namespace PeterDB {
             void* read_attr = nullptr;
             int rc = rbfm.readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName,
                                                   read_attr, data_record);
+
             char* attr_data = (char*)read_attr + sizeof (char);
             if(*(unsigned char*)(read_attr) == 128u){
+                free(read_attr);
                 continue;
             }
             if (type == TypeInt || type == TypeReal){
@@ -1330,6 +1337,7 @@ namespace PeterDB {
                 memcpy((char*)data + offset, attr_data, sizeof (unsigned ) + len);
                 offset += sizeof (unsigned ) + len;
             }
+            free(read_attr);
         }
 
         return 0;
@@ -1396,6 +1404,7 @@ namespace PeterDB {
         void* read_attr = nullptr;
         rbfm.readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, read_attr);
         if(*(unsigned char *)read_attr == 128u) {
+            free(read_attr);
             return false;
         }
         // find attr in recordDescriptor with name = conditionAttribute
@@ -1404,6 +1413,9 @@ namespace PeterDB {
                 [&](const Attribute& attr) {return attr.name == conditionAttribute;}
         );
         if (attr == recordDescriptor.end()) {
+            if(read_attr != nullptr){
+                free(read_attr);
+            }
             return false;
         }
         void *attr_val = (char*)read_attr + sizeof (char);
