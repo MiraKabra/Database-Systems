@@ -305,12 +305,25 @@ namespace PeterDB {
         //const std::vector<std::string> attributeNames_table = {"table-id"};
         void* value = nullptr;
         prepare_value_for_varchar(tableName, value);
-        if(rbfm.scan(table_handle, getTableAttribute(), "table-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator)) return -1;
+        if(rbfm.scan(table_handle, getTableAttribute(), "table-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator)){
+            if(value != nullptr){
+                free(value);
+            }
+            return -1;
+        }
 
         RID rid;
 
         void* data = nullptr;
-        if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF) return -1;
+        if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF){
+            if(value != nullptr){
+                free(value);
+            }
+            if(data != nullptr){
+                free(data);
+            }
+            return -1;
+        }
         //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
         int table_id = *(int*)((char*)data + sizeof (char));
         int sys = *(int*)((char*)data + sizeof (char) + sizeof (unsigned ));
@@ -318,6 +331,7 @@ namespace PeterDB {
         //Found the table-id
         //If this is system table return true;
         free(data);
+        free(value);
         if(sys == 1){
             return true;
         }

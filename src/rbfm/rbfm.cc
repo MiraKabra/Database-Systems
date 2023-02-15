@@ -524,7 +524,11 @@ namespace PeterDB {
         memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
         //return error if trying to read a hole
-        if(is_slot_empty(page, slotNum)) return -1;
+        //This record was deleted, so cant be read
+        if(is_slot_empty(page, slotNum)){
+            free(page);
+            return -1;
+        }
 
         int *slotTable = (int *)(page + PAGE_SIZE);
         int numSlots = ((int *)slotTable)[-2];
@@ -542,11 +546,6 @@ namespace PeterDB {
             memcpy(&lengthOfRecord, page + offsetForRecordLength, sizeof(unsigned));
         }
 
-        //This record was deleted, so cant be read
-        if(lengthOfRecord == -1){
-            free(page);
-            return -1;
-        }
         if(isTombStone(startAddress)) {
             RID next_rid;
             tombStonePointerExtractor(next_rid, startAddress, page);
@@ -873,7 +872,11 @@ namespace PeterDB {
         //It will store the size of the record in the recordSize variable
         void * record = encoder(recordDescriptor, data, updatedRecordSize);
 
-        if(updateMiscRecord(fileHandle, recordDescriptor, record, updatedRecordSize, rid) != 0) return -1;
+        if(updateMiscRecord(fileHandle, recordDescriptor, record, updatedRecordSize, rid) != 0){
+            free(record);
+            return -1;
+        }
+        free(record);
         return 0;
     }
     //checked
@@ -928,6 +931,7 @@ namespace PeterDB {
             freeSpace = freeSpace + (record_old_len - updatedRecordSize);
             memcpy(page + PAGE_SIZE - sizeof (unsigned ), &freeSpace, sizeof (unsigned));
             fileHandle.writePage(pageIndex, page);
+            free(page);
         }else{
             /*
              * This is a trickier one. It has two cases.
@@ -945,6 +949,7 @@ namespace PeterDB {
                 freeSpace = freeSpace - (updatedRecordSize - record_old_len);
                 memcpy(page + PAGE_SIZE - sizeof (unsigned ), &freeSpace, sizeof (unsigned));
                 fileHandle.writePage(pageIndex, page);
+                free(page);
             }else{
                 //The tricky case
 
@@ -1368,6 +1373,7 @@ namespace PeterDB {
                                                   read_attr, data_record);
             if(*(unsigned char*)(read_attr) == 128u){
                 bitMap[i/8].set(8 - i%8 - 1);
+                free(read_attr);
                 continue;
             }
             if(type == TypeInt || type == TypeReal){
