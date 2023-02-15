@@ -64,13 +64,16 @@ namespace PeterDB {
         if(rbfm.openFile(this->table_file, this->table_handle)) return -1;
         if(rbfm.openFile(this->column_file, this->column_handle)) return -1;
         //Create entries for 'Tables' table
-        void* table_entry[2];
+        void* table_entry[2] = {nullptr, nullptr};
 
         createDataForTables_table(1, "Tables", 1, table_entry[0]);
         createDataForTables_table(2, "Columns", 1, table_entry[1]);
 
         //Create entries for 'Columns' table
         void* column_entry[9];
+        for(int j = 0; j < 9; j++){
+            column_entry[j] = nullptr;
+        }
 
         createDataForColumns_table(1, "table-id", TypeInt, 4, 1, column_entry[0]);
         createDataForColumns_table(1, "table-name", TypeVarChar, 50, 2, column_entry[1]);
@@ -85,15 +88,26 @@ namespace PeterDB {
         RID rid;
         //Enter the "Tables" and "Columns" entries
         for(int i = 0; i < 2; i++){
-            if(rbfm.insertRecord(table_handle, getTableAttribute(), table_entry[i], rid)) return -1;
+            if(rbfm.insertRecord(table_handle, getTableAttribute(), table_entry[i], rid)){
+                free(table_entry[i]);
+                return -1;
+            }
             free(table_entry[i]);
         }
 
         for(int i = 0; i < 9; i++) {
             if(i == 3) continue;
-            if(rbfm.insertRecord(column_handle, getColumnAttribute(), column_entry[i], rid)) return -1;
+            if(rbfm.insertRecord(column_handle, getColumnAttribute(), column_entry[i], rid)){
+                free(column_entry[i]);
+                return -1;
+            }
             free(column_entry[i]);
         }
+        //As it is not freed in the loop above
+        if(column_entry[3] != nullptr){
+            free(column_entry[3]);
+        }
+
         RelationManager::tableCount += 2;
         this->catalog_exists = true;
         return 0;
@@ -263,7 +277,10 @@ namespace PeterDB {
         //Insert data in 'Tables' table
         void* data_for_tables_table = nullptr;
         createDataForTables_table(RelationManager::tableCount, tableName, 0, data_for_tables_table);
-        if(rbfm.insertRecord(table_handle, getTableAttribute(), data_for_tables_table, rid)) return -1;
+        if(rbfm.insertRecord(table_handle, getTableAttribute(), data_for_tables_table, rid)){
+            free(data_for_tables_table);
+            return -1;
+        }
         free(data_for_tables_table);
         //Insert data in 'Columns' table
         for(int i = 0; i < attrs.size(); i++){
@@ -286,14 +303,27 @@ namespace PeterDB {
         //Find the table id and rid for deleting this table
         const std::vector<std::string> attributeNames_table = {"table-id", "system"};
         //const std::vector<std::string> attributeNames_table = {"table-id"};
-        void* value;
+        void* value = nullptr;
         prepare_value_for_varchar(tableName, value);
-        if(rbfm.scan(table_handle, getTableAttribute(), "table-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator)) return -1;
+        if(rbfm.scan(table_handle, getTableAttribute(), "table-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator)){
+            if(value != nullptr){
+                free(value);
+            }
+            return -1;
+        }
 
         RID rid;
 
         void* data = nullptr;
-        if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF) return -1;
+        if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF){
+            if(value != nullptr){
+                free(value);
+            }
+            if(data != nullptr){
+                free(data);
+            }
+            return -1;
+        }
         //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
         int table_id = *(int*)((char*)data + sizeof (char));
         int sys = *(int*)((char*)data + sizeof (char) + sizeof (unsigned ));
@@ -301,6 +331,7 @@ namespace PeterDB {
         //Found the table-id
         //If this is system table return true;
         free(data);
+        free(value);
         if(sys == 1){
             return true;
         }
@@ -318,14 +349,28 @@ namespace PeterDB {
         //Find the table id and rid for deleting this table
         const std::vector<std::string> attributeNames_table = {"table-id", "system"};
         //const std::vector<std::string> attributeNames_table = {"table-id"};
-        void* value;
+        void* value = nullptr;
         prepare_value_for_varchar(tableName, value);
-        if(rbfm.scan(table_handle, getTableAttribute(), "table-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator)) return -1;
+        if(rbfm.scan(table_handle, getTableAttribute(), "table-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator)){
+            if(value != nullptr){
+                free(value);
+            }
+            return -1;
+        }
 
         RID rid;
 
         void* data = nullptr;
-        if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF) return -1;
+        if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF){
+            if(value != nullptr){
+                free(value);
+            }
+            if(data != nullptr){
+                free(data);
+            }
+            rbfm_ScanIterator.close();
+            return -1;
+        }
         //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
         int table_id = *(int*)((char*)data + sizeof (char));
         int sys = *(int*)((char*)data + sizeof (char) + sizeof (unsigned ));
@@ -333,11 +378,20 @@ namespace PeterDB {
         //If this is system table, return error
         free(data);
         if(sys == 1){
+            if(value != nullptr){
+                free(value);
+            }
             rbfm_ScanIterator.close();
             return -1;
         }
         //else Delete this record from 'tables' table
-        if(rbfm.deleteRecord(table_handle, getTableAttribute(), rid)) return -1;
+        if(rbfm.deleteRecord(table_handle, getTableAttribute(), rid)){
+            if(value != nullptr){
+                free(value);
+            }
+            rbfm_ScanIterator.close();
+            return -1;
+        }
         rbfm_ScanIterator.close();
         free(value);
         //Now find the entries with this table-id in 'columns' table one by one and delete them
@@ -348,13 +402,24 @@ namespace PeterDB {
         data = nullptr;
         while (rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
             found = true;
-            if(rbfm.deleteRecord(column_handle, getColumnAttribute(), rid)) return -1;
+            if(rbfm.deleteRecord(column_handle, getColumnAttribute(), rid)){
+                if(data != nullptr){
+                    free(data);
+                }
+                rbfm_ScanIterator.close();
+                return -1;
+            }
+
+            free(data);
             data = nullptr;
         }
         if(data != nullptr){
             free(data);
         }
-        if(rbfm.destroyFile(tableName) != 0) return -1;
+        if(rbfm.destroyFile(tableName) != 0){
+            rbfm_ScanIterator.close();
+            return -1;
+        }
         rbfm_ScanIterator.close();
 
         return 0;

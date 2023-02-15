@@ -524,7 +524,11 @@ namespace PeterDB {
         memset(page, 0, PAGE_SIZE);
         fileHandle.readPage(pageIndex, page);
         //return error if trying to read a hole
-        if(is_slot_empty(page, slotNum)) return -1;
+        //This record was deleted, so cant be read
+        if(is_slot_empty(page, slotNum)){
+            free(page);
+            return -1;
+        }
 
         int *slotTable = (int *)(page + PAGE_SIZE);
         int numSlots = ((int *)slotTable)[-2];
@@ -542,11 +546,6 @@ namespace PeterDB {
             memcpy(&lengthOfRecord, page + offsetForRecordLength, sizeof(unsigned));
         }
 
-        //This record was deleted, so cant be read
-        if(lengthOfRecord == -1){
-            free(page);
-            return -1;
-        }
         if(isTombStone(startAddress)) {
             RID next_rid;
             tombStonePointerExtractor(next_rid, startAddress, page);
@@ -697,6 +696,7 @@ namespace PeterDB {
          * It does not matter if it is internal id or not,
          * the deleteGivenRecord function will simply delete it*/
         deleteGivenRecord(fileHandle, recordDescriptor, rid);
+        free(page);
         return 0;
     }
     //checked
@@ -872,7 +872,11 @@ namespace PeterDB {
         //It will store the size of the record in the recordSize variable
         void * record = encoder(recordDescriptor, data, updatedRecordSize);
 
-        if(updateMiscRecord(fileHandle, recordDescriptor, record, updatedRecordSize, rid) != 0) return -1;
+        if(updateMiscRecord(fileHandle, recordDescriptor, record, updatedRecordSize, rid) != 0){
+            free(record);
+            return -1;
+        }
+        free(record);
         return 0;
     }
     //checked
@@ -927,6 +931,7 @@ namespace PeterDB {
             freeSpace = freeSpace + (record_old_len - updatedRecordSize);
             memcpy(page + PAGE_SIZE - sizeof (unsigned ), &freeSpace, sizeof (unsigned));
             fileHandle.writePage(pageIndex, page);
+            free(page);
         }else{
             /*
              * This is a trickier one. It has two cases.
@@ -944,6 +949,7 @@ namespace PeterDB {
                 freeSpace = freeSpace - (updatedRecordSize - record_old_len);
                 memcpy(page + PAGE_SIZE - sizeof (unsigned ), &freeSpace, sizeof (unsigned));
                 fileHandle.writePage(pageIndex, page);
+                free(page);
             }else{
                 //The tricky case
 
@@ -1157,7 +1163,12 @@ namespace PeterDB {
         //Read the record given by rid
         void *data_record = nullptr;
         if(readRecord(fileHandle, recordDescriptor, rid, data_record)) return -1;
-        return readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName, data, data_record);
+        if(readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName, data, data_record)){
+            free(data_record);
+            return -1;
+        }
+        free(data_record);
+        return 0;
     }
 
     //Returns an iterator called rbfm_ScanIterator
@@ -1318,8 +1329,10 @@ namespace PeterDB {
             void* read_attr = nullptr;
             int rc = rbfm.readAttributeFromRecord(fileHandle, recordDescriptor, rid, attributeName,
                                                   read_attr, data_record);
+
             char* attr_data = (char*)read_attr + sizeof (char);
             if(*(unsigned char*)(read_attr) == 128u){
+                free(read_attr);
                 continue;
             }
             if (type == TypeInt || type == TypeReal){
@@ -1330,8 +1343,9 @@ namespace PeterDB {
                 memcpy((char*)data + offset, attr_data, sizeof (unsigned ) + len);
                 offset += sizeof (unsigned ) + len;
             }
+            free(read_attr);
         }
-
+        free(data_record);
         return 0;
     }
 
@@ -1359,6 +1373,7 @@ namespace PeterDB {
                                                   read_attr, data_record);
             if(*(unsigned char*)(read_attr) == 128u){
                 bitMap[i/8].set(8 - i%8 - 1);
+                free(read_attr);
                 continue;
             }
             if(type == TypeInt || type == TypeReal){
@@ -1375,6 +1390,7 @@ namespace PeterDB {
             char* pointer = (char*)&bitMap[i];
             memcpy((char*)bitmap + i, pointer, sizeof (char));
         }
+        free(data_record);
         return totalSize;
     }
 
@@ -1396,6 +1412,7 @@ namespace PeterDB {
         void* read_attr = nullptr;
         rbfm.readAttribute(fileHandle, recordDescriptor, rid, conditionAttribute, read_attr);
         if(*(unsigned char *)read_attr == 128u) {
+            free(read_attr);
             return false;
         }
         // find attr in recordDescriptor with name = conditionAttribute
@@ -1404,6 +1421,9 @@ namespace PeterDB {
                 [&](const Attribute& attr) {return attr.name == conditionAttribute;}
         );
         if (attr == recordDescriptor.end()) {
+            if(read_attr != nullptr){
+                free(read_attr);
+            }
             return false;
         }
         void *attr_val = (char*)read_attr + sizeof (char);
