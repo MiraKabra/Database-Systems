@@ -10,6 +10,44 @@
 # define IX_EOF (-1)  // end of the index scan
 
 namespace PeterDB {
+
+    struct IndexNodeMetadata{
+        int freeSpace;
+        int numOfKeys;
+        int type;
+
+        IndexNodeMetadata(){
+            this->freeSpace = 0;
+            this->numOfKeys = 0;
+            this->type = 0;
+        }
+        IndexNodeMetadata(int freeSpace, int numOfKeys, int type){
+            this->freeSpace = freeSpace;
+            this->numOfKeys = numOfKeys;
+            this->type = type;
+        }
+    };
+
+    struct LeafNodeMetadata{
+        int rightSibling;
+        int freeSpace;
+        int numOfKeys;
+        int type;
+
+        LeafNodeMetadata(){
+            this->rightSibling = -1;
+            this->freeSpace = 0;
+            this->numOfKeys = 0;
+            this->type = 1;
+        }
+        LeafNodeMetadata(int rightSibling, int freeSpace, int numOfKeys, int type){
+            this->rightSibling = rightSibling;
+            this->freeSpace = freeSpace;
+            this->numOfKeys = numOfKeys;
+            this->type = type;
+        }
+    };
+
     class IX_ScanIterator;
 
     class IXFileHandle;
@@ -55,6 +93,13 @@ namespace PeterDB {
         IndexManager(const IndexManager &) = default;                               // Prevent construction by copying
         IndexManager &operator=(const IndexManager &) = default;                    // Prevent assignment
 
+    private:
+        int get_root_page_index(IXFileHandle ixFileHandle);
+        int appendNewIndexPage(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key);
+        int appendNewLeafPage(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid);
+        int get_length_of_key(const Attribute &attribute, const void *key);
+        int update_root_entry_dummy_page(IXFileHandle ixFileHandle, int rootIndex);
+        RC updatePointerInParentNode(IXFileHandle &ixFileHandle, int parentIndex, bool isLeftPointer, int pointerVal, int index_of_key, AttrType keyType);
     };
 
     class IX_ScanIterator {
@@ -89,6 +134,16 @@ namespace PeterDB {
 
         // Put the current counter values of associated PF FileHandles into variables
         RC collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount);
+        RC setHandle(FileHandle fileHandle);
+        FileHandle getHandle();
+
+        RC readPage(PageNum pageNum, void *data);
+        RC writePage(PageNum pageNum, const void *data);                    // Write a specific page
+        RC appendPage(const void *data);
+        unsigned getNumberOfPages();
+
+    private:
+        FileHandle fileHandle;
 
     };
 }// namespace PeterDB

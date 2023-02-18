@@ -13,6 +13,31 @@
 ### 2. Meta-data page in an index file
 - Show your meta-data page of an index design if you have any. 
 
+An index node structure:
+Node flag : 0 : internal node, 1: leaf node
+
+a. Internal node:
+
+i. k + 1 pointer, k keys
+
+ii. Pointers store pageNum of child page
+
+iii. FreeSpace , Number of keys
+
+iv. One flag for : internal node (0)
+
+
+
+b. Leaf node:
+
+i. <Key, RID> pair
+ii. Pointers store pagenum of right sibling
+iii. FreeSpace, Number of keys
+
+iv. One flag for : leaf node (1)
+
+
+
 
 
 ### 3. Index Entry Format
