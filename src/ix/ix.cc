@@ -130,7 +130,21 @@ namespace PeterDB {
             int offset_for_pointer_page = get_page_pointer_offset_for_insertion(page, node_page_index, keyType, key);
             insert_util(ixFileHandle, *(int*)((char*)page + offset_for_pointer_page), keyType, key, rid, newChildEntry);
         //Implement rest of it
+            if(newChildEntry == nullptr)return 0;
+            else{
+                 //check if the index node has space for this new key
+                 if(hasSpaceIndexNode(page, keyType, newChildEntry)){
+                     put_entry_in_index_node(page, keyType, newChildEntry);
+                     ixFileHandle.writePage(node_page_index, page);
+                     if(newChildEntry != nullptr){
+                         free(newChildEntry);
+                     }
+                     newChildEntry = nullptr;
+                     return 0;
+                 }else{
 
+                 }
+            }
         }else{
             if(hasSpaceInLeafNode(page, keyType, key)){
                 put_entry_in_leaf_node(page, keyType, key, rid);
@@ -146,6 +160,13 @@ namespace PeterDB {
             }
         }
         return 0;
+    }
+    /*
+     * Create a temp page of 2*PAGE_SIZE and insert the newChildEntry
+     * Here interesting thing is that the push-up value will be inserted into newChildEntry
+     * at the end*/
+    RC IndexManager::splitIndexNode(void* &page, IXFileHandle &ixFileHandle, AttrType keyType, void* &newChildEntry){
+
     }
 
     RC IndexManager::splitLeafNode(void* &page, IXFileHandle &ixFileHandle, AttrType keyType, const void *key, const RID &rid, void* &newChildEntry){
@@ -260,8 +281,7 @@ namespace PeterDB {
         void* smallest_key = nullptr;
         int len_smallest_key = 0;
 
-        int new_leaf_index = appendNewLeafPageWithData(ixFileHandle, new_leaf_data, new_leaf_data_len, old_node_metadata.rightSibling, free_space_new_page, num_keys_new_page,
-                                                       true, keyType, smallest_key, len_smallest_key);
+        int new_leaf_index = appendNewLeafPageWithData(ixFileHandle, new_leaf_data, new_leaf_data_len, old_node_metadata.rightSibling, free_space_new_page, num_keys_new_page,true, keyType, smallest_key, len_smallest_key);
 
         int old_leaf_data_len = half_data_offset;
         void* old_leaf_data = malloc(old_leaf_data_len);
@@ -269,9 +289,11 @@ namespace PeterDB {
 
         complete_data_update_already_existing_leaf(page, old_leaf_data, old_leaf_data_len, new_leaf_index, free_space_old_page, num_keys_old_page);
 
-        newChildEntry = malloc(sizeof (unsigned ) + len_smallest_key);
-        memcpy(newChildEntry, &new_leaf_index, sizeof (unsigned ));
-        memcpy((char*)newChildEntry + sizeof (unsigned ), smallest_key, len_smallest_key);
+        newChildEntry = malloc(len_smallest_key + sizeof (unsigned ));
+        /*
+         * newChildEntry format : key + 4 byte page index*/
+        memcpy(newChildEntry, smallest_key, len_smallest_key);
+        memcpy((char*)newChildEntry + len_smallest_key, &new_leaf_index, sizeof (unsigned ));
 
         free(temp_page);
         return 0;
@@ -393,6 +415,110 @@ namespace PeterDB {
         return 0;
     }
 
+    /*
+     * newChildEntry format : key + 4 byte child page index
+     * If this function is called, the index node has space for this entry
+     *
+     * We need to search the place for this insertion. The offset for insertion can be at the
+     * beginning, in the middle or at the end
+     *
+     * In the beginning or middle :
+     * a. shift is required
+     * b. find offset: points to 0 in case of beginning
+     * c. increase offset by 4 byte: this 4 byte pointer becomes the left side pointer of the new entry
+     * d. shift the rest of the entry by length of newChildEntry
+     * e. paste newChildEntry and update freespace, numkeys
+     *
+     * At the end:
+     * a. no shift is needed
+     * b. offset is at the end of k th key (start of k+1 pointer)
+     * c. increase offset by 4 byte: this 4 byte pointer becomes the left side pointer of the new entry
+     * c. Just paste the newchildentry, here the k+1 th pointer becomes the left side pointer of new key
+     * d. update freespace, numkeys
+     * */
+    RC IndexManager::put_entry_in_index_node(void* &page, AttrType keyType, void* &newChildEntry){
+        int offset = PAGE_SIZE - 2*sizeof (unsigned );
+        int num_of_keys = *(int*)((char*)page + offset);
+        offset = offset - sizeof (unsigned );
+        int free_space = *(int*)((char*)page + offset);
+
+        //deduct metadata size
+        int size_of_data_entry = PAGE_SIZE - free_space - 3*sizeof (unsigned );
+        offset = 0;
+        int keys_inspected = 0;
+        int required_space = 0;
+
+        //calculate offset for putting key
+        find_offset_for_putting_key_in_indexNode(page, keyType, newChildEntry, num_of_keys, required_space, keys_inspected, offset);
+        //Step c
+        offset += sizeof (unsigned );
+
+        /*
+         * Found the offset where to insert,
+         * check if it is getting inserted at the end of all data entries
+         * because in that case we won't need to shift anything*/
+
+        if(keys_inspected != num_of_keys){
+            //shift right
+            memmove((char*)page + offset + required_space, (char*)page + offset, size_of_data_entry - offset);
+        }
+        //put key
+        memcpy((char*)page + offset, newChildEntry, required_space);
+
+        //update free space
+        free_space = free_space - required_space;
+        memcpy((char*)page + PAGE_SIZE - 3*sizeof (unsigned ), &free_space, sizeof (unsigned ));
+
+        //update numkeys
+        num_of_keys++;
+        memcpy((char*)page + PAGE_SIZE - 2*sizeof (unsigned ), &num_of_keys, sizeof (unsigned ));
+        return 0;
+    }
+
+    RC IndexManager::find_offset_for_putting_key_in_indexNode(void* &page, AttrType keyType, void* &newChildEntry, int& num_of_keys, int &required_space, int &keys_inspected, int &offset){
+        if(keyType == TypeInt){
+            required_space = 2*sizeof (unsigned );
+            int key_to_put = *(int*)(newChildEntry);
+            while(keys_inspected < num_of_keys){
+                int curr_key_under_inspection = *(int*)((char*)page + offset + sizeof (unsigned ));
+                if(key_to_put < curr_key_under_inspection){
+                    break;
+                }
+                keys_inspected++;
+                offset += 2*sizeof (unsigned );
+            }
+        }else if(keyType == TypeReal){
+            required_space = sizeof (float) + sizeof (unsigned );
+            float key_to_put = *(float*)newChildEntry;
+            while(keys_inspected < num_of_keys){
+                float curr_key_under_inspection = *(float*)((char*)page + offset + sizeof (unsigned ));
+                if(key_to_put < curr_key_under_inspection){
+                    break;
+                }
+                keys_inspected++;
+                offset =  offset + sizeof (unsigned ) + sizeof (float);
+            }
+        }else{
+            int key_to_put_len = *(int*)newChildEntry;
+            char key_to_put[key_to_put_len + 1];
+            memcpy(&key_to_put, (char*)newChildEntry + sizeof (unsigned ), key_to_put_len);
+            key_to_put[key_to_put_len] = '\0';
+            required_space = sizeof (unsigned ) + key_to_put_len + sizeof (unsigned );
+            while(keys_inspected < num_of_keys){
+                int len_curr_key_under_inspection = *(int*)((char*)page + offset + sizeof (unsigned ));
+                char curr_key_under_inspection[len_curr_key_under_inspection + 1];
+                memcpy(&curr_key_under_inspection, (char*)page + offset + 2*sizeof (unsigned ), len_curr_key_under_inspection);
+                curr_key_under_inspection[len_curr_key_under_inspection] = '\0';
+                if(strcmp(key_to_put , curr_key_under_inspection) < 0){
+                    break;
+                }
+                keys_inspected++;
+                //pointer + 4 byte for varchar len + varchar len
+                offset += sizeof (unsigned ) + sizeof (unsigned ) + len_curr_key_under_inspection;
+            }
+        }
+        return 0;
+    }
     RC IndexManager::put_entry_in_leaf_node(void* &page, AttrType keyType, const void *key, const RID &rid){
         int offset = PAGE_SIZE - 2*sizeof (unsigned );
         int num_of_keys = *(int*)((char*)page + offset);
@@ -418,32 +544,25 @@ namespace PeterDB {
         if(keyType == TypeInt){
             memcpy((char*)page + offset, key, sizeof (unsigned ));
             offset += sizeof (unsigned );
-            memcpy((char*)page + offset, &rid.pageNum, sizeof (unsigned ));
-            offset += sizeof (unsigned );
-            memcpy((char*)page + offset, &rid.slotNum, sizeof (unsigned ));
-            free_space = free_space - 3*sizeof (unsigned );
         }else if(keyType == TypeReal){
             memcpy((char*)page + offset, key, sizeof (float ));
             offset += sizeof (float );
-            memcpy((char*)page + offset, &rid.pageNum, sizeof (unsigned ));
-            offset += sizeof (unsigned );
-            memcpy((char*)page + offset, &rid.slotNum, sizeof (unsigned ));
-            free_space = free_space - sizeof (float ) - 2*sizeof (unsigned );
         }else{
             int key_len = *(int*)(key);
             memcpy((char*)page + offset, key, sizeof (unsigned ) + key_len);
             offset += sizeof (unsigned ) + key_len;
-            memcpy((char*)page + offset, &rid.pageNum, sizeof (unsigned ));
-            offset += sizeof (unsigned );
-            memcpy((char*)page + offset, &rid.slotNum, sizeof (unsigned ));
-            free_space = free_space - 3*sizeof (unsigned ) - key_len;
         }
-        //update freespace
+
+        memcpy((char*)page + offset, &rid.pageNum, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+        memcpy((char*)page + offset, &rid.slotNum, sizeof (unsigned ));
+
+        //update free space
+        free_space = free_space - required_space;
         memcpy((char*)page + PAGE_SIZE - 3*sizeof (unsigned ), &free_space, sizeof (unsigned ));
         //update numkeys
         num_of_keys++;
         memcpy((char*)page + PAGE_SIZE - 2*sizeof (unsigned ), &num_of_keys, sizeof (unsigned ));
-
 
         return 0;
     }
@@ -456,6 +575,24 @@ namespace PeterDB {
         return false;
     }
 
+    bool IndexManager::hasSpaceIndexNode(void* &page, AttrType keyType, void* &newChildEntry){
+        int free_space = *(int*)((char*)page + PAGE_SIZE - 3*sizeof (unsigned ));
+        //space for 1 pointer and the key
+        int required_space = 0;
+
+        if(keyType == TypeInt){
+            // 1 for a pointer, one for key
+            required_space = 2*sizeof (unsigned );
+        }else if(keyType == TypeReal){
+            required_space = sizeof (unsigned ) + sizeof (float );
+        }else{
+            int len_varchar = *(int*)(newChildEntry);
+            required_space = 2*sizeof (unsigned ) + len_varchar;
+        }
+
+        if(required_space <= free_space) return true;
+        return false;
+    }
     int IndexManager::get_page_pointer_offset_for_insertion(void* &page, int node_page_index, AttrType keyType, const void *key){
         int i = 0;
         int offset = 0;

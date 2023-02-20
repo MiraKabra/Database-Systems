@@ -107,10 +107,14 @@ namespace PeterDB {
         int get_page_pointer_offset_for_insertion(void* &page, int node_page_index, AttrType keyType, const void *key);
         bool hasSpaceInLeafNode(void* &page, AttrType keyType, const void *key);
         RC put_entry_in_leaf_node(void* &page, AttrType keyType, const void *key, const RID &rid);
+        RC put_entry_in_index_node(void* &page, AttrType keyType, void* &newChildEntry);
         RC splitLeafNode(void* &page, IXFileHandle &ixFileHandle, AttrType keyType, const void *key, const RID &rid, void* &newChildEntry);
+        RC splitIndexNode(void* &page, IXFileHandle &ixFileHandle, AttrType keyType, void* &newChildEntry);
         RC find_offset_for_putting_key_in_leafNode(void* &page, AttrType keyType, const void *key, int& num_of_keys, int &required_space, int &keys_inspected, int &offset);
+        RC find_offset_for_putting_key_in_indexNode(void* &page, AttrType keyType, void* &newChildEntry, int& num_of_keys, int &required_space, int &keys_inspected, int &offset);
         RC complete_data_update_already_existing_leaf(void* &page, void* &data, int &data_len, int &rightSibling, int &freeSpace, int &num_keys);
         RC get_smallest_key_value_on_leaf_page(void* &page, AttrType key_type, void* &smallest_key, int &len_key);
+        bool hasSpaceIndexNode(void* &page, AttrType keyType, void* &newChildEntry);
     };
 
     class IX_ScanIterator {
