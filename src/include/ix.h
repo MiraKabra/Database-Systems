@@ -96,10 +96,17 @@ namespace PeterDB {
     private:
         int get_root_page_index(IXFileHandle ixFileHandle);
         int appendNewIndexPage(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key);
-        int appendNewLeafPage(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid);
-        int get_length_of_key(const Attribute &attribute, const void *key);
+        int appendNewLeafPageWithData(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid, int rightSibling);
+        int get_length_of_key(AttrType type, const void *key);
         int update_root_entry_dummy_page(IXFileHandle ixFileHandle, int rootIndex);
         RC updatePointerInParentNode(IXFileHandle &ixFileHandle, int parentIndex, bool isLeftPointer, int pointerVal, int index_of_key, AttrType keyType);
+        RC insert_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid, void* &newChildEntry);
+        bool isInternalNode(IXFileHandle &ixFileHandle, int node_page_index);
+        int appendEmptyLeafPage(IXFileHandle &ixFileHandle, int rightSibling);
+        int get_page_pointer_offset_for_insertion(void* &page, int node_page_index, AttrType keyType, const void *key);
+        bool hasSpaceInLeafNode(void* &page, AttrType keyType, const void *key);
+        RC put_entry_in_leaf_node(void* &page, AttrType keyType, const void *key, const RID &rid);
+        RC splitLeafNode(void* &page, IXFileHandle &ixFileHandle, AttrType keyType, const void *key, const RID &rid, void* &newChildEntry);
     };
 
     class IX_ScanIterator {
