@@ -104,13 +104,13 @@ namespace PeterDB {
         IndexManager &operator=(const IndexManager &) = default;                    // Prevent assignment
 
     private:
-        int get_root_page_index(IXFileHandle ixFileHandle) const;
+        int get_root_page_index(IXFileHandle &ixFileHandle) const;
         int appendNewIndexPage(IXFileHandle &ixFileHandle, AttrType keyType, const void *key);
         //int appendNewLeafPageWithData(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid, int rightSibling);
         int appendNewLeafPageWithData(IXFileHandle &ixFileHandle, void* &data, int &data_len, int &rightSibling, int &freeSpace, int &num_keys, bool get_smallest_key, AttrType key_type, void* &smallest_key, int &len_smallest_key);
         int appendNewIndexPageWithData(IXFileHandle &ixFileHandle, void* &data, int &data_len, int &freeSpace, int &num_keys);
         int get_length_of_key(AttrType type, const void *key);
-        int update_root_entry_dummy_page(IXFileHandle ixFileHandle, int rootIndex);
+        int update_root_entry_dummy_page(IXFileHandle &ixFileHandle, int rootIndex);
         RC updatePointerInParentNode(IXFileHandle &ixFileHandle, int parentIndex, bool isLeftPointer, int pointerVal, int index_of_key, AttrType keyType);
         RC insert_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid, void* &newChildEntry);
         bool isInternalNode(void* &page) const;
@@ -165,8 +165,8 @@ namespace PeterDB {
 
         // Put the current counter values of associated PF FileHandles into variables
         RC collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount);
-        RC setHandle(FileHandle fileHandle);
-        FileHandle getHandle();
+        RC setHandle(FileHandle *fileHandle);
+        FileHandle* getHandle();
 
         RC readPage(PageNum pageNum, void *data);
         RC writePage(PageNum pageNum, const void *data);                    // Write a specific page
@@ -174,7 +174,7 @@ namespace PeterDB {
         unsigned getNumberOfPages();
 
     private:
-        FileHandle fileHandle;
+        FileHandle* fileHandle = nullptr;
 
     };
 }// namespace PeterDB

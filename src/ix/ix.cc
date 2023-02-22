@@ -39,29 +39,31 @@ namespace PeterDB {
     }
 
     RC IndexManager::openFile(const std::string &fileName, IXFileHandle &ixFileHandle) {
-        if(ixFileHandle.getHandle().getFile() != nullptr) return -1;
+
+        if(ixFileHandle.getHandle() != nullptr) return -1;
         PagedFileManager& pagedFileManager = PagedFileManager::instance();
-        FileHandle indexFileHandle;
-        if(pagedFileManager.openFile(fileName, indexFileHandle)) return -1;
+        FileHandle *indexFileHandle = new FileHandle;
+        if(pagedFileManager.openFile(fileName, *indexFileHandle)) return -1;
         ixFileHandle.setHandle(indexFileHandle);
         return 0;
     }
 
     RC IndexManager::closeFile(IXFileHandle &ixFileHandle) {
         PagedFileManager& pagedFileManager = PagedFileManager::instance();
-        FileHandle fl = ixFileHandle.getHandle();
-        if(pagedFileManager.closeFile(fl)) return -1;
+        FileHandle* fl = ixFileHandle.getHandle();
+        if(pagedFileManager.closeFile(*fl)) return -1;
         return 0;
     }
 
 
     RC IndexManager::insertEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid) {
-        int root_page_index = get_root_page_index(ixFileHandle);
+        int root_page_index = get_root_page_index(ixFileHandle); // 1 r
+
         //If the tree is empty
         if(root_page_index == -1){
-            root_page_index = appendNewIndexPage(ixFileHandle, attribute.type, key);
+            root_page_index = appendNewIndexPage(ixFileHandle, attribute.type, key); // 1 a
             //Update root page index in the dummy page;
-            update_root_entry_dummy_page(ixFileHandle, root_page_index);
+            update_root_entry_dummy_page(ixFileHandle, root_page_index); // 1 r, 1 w
             /*
              * Insert leaf page with this key
              * */
@@ -991,7 +993,7 @@ namespace PeterDB {
         return -1;
     }
 
-    int IndexManager::get_root_page_index(IXFileHandle ixFileHandle) const{
+    int IndexManager::get_root_page_index(IXFileHandle &ixFileHandle) const{
         void* page = malloc(PAGE_SIZE);
         if(ixFileHandle.readPage(0, page)){
             free(page);
@@ -1002,7 +1004,7 @@ namespace PeterDB {
         return value;
     }
 
-    int IndexManager::update_root_entry_dummy_page(IXFileHandle ixFileHandle, int rootIndex){
+    int IndexManager::update_root_entry_dummy_page(IXFileHandle &ixFileHandle, int rootIndex){
         void* page = malloc(PAGE_SIZE);
         if(ixFileHandle.readPage(0, page)){
             free(page);
@@ -1300,33 +1302,33 @@ namespace PeterDB {
     }
 
     RC IXFileHandle::collectCounterValues(unsigned &readPageCount, unsigned &writePageCount, unsigned &appendPageCount) {
-        this->getHandle().collectCounterValues(readPageCount, writePageCount, appendPageCount);
+        this->getHandle()->collectCounterValues(readPageCount, writePageCount, appendPageCount);
         return 0;
     }
 
-    RC IXFileHandle::setHandle(FileHandle fileHandle){
+    RC IXFileHandle::setHandle(FileHandle *fileHandle){
         this->fileHandle = fileHandle;
     }
-    FileHandle IXFileHandle::getHandle(){
+    FileHandle* IXFileHandle::getHandle(){
         return this->fileHandle;
     }
 
     RC IXFileHandle::readPage(PageNum pageNum, void *data){
-        if(this->getHandle().readPage(pageNum, data)) return -1;
+        if(this->getHandle()->readPage(pageNum, data)) return -1;
         return 0;
     }
 
     RC IXFileHandle::writePage(PageNum pageNum, const void *data){
-        if(this->getHandle().writePage(pageNum, data)) return -1;
+        if(this->getHandle()->writePage(pageNum, data)) return -1;
         return 0;
     }
 
     RC IXFileHandle::appendPage(const void *data){
-        if(this->getHandle().appendPage(data)) return -1;
+        if(this->getHandle()->appendPage(data)) return -1;
         return 0;
     }
 
     unsigned IXFileHandle::getNumberOfPages(){
-        return this->getHandle().getNumberOfPages();
+        return this->getHandle()->getNumberOfPages();
     }
 } // namespace PeterDB
