@@ -1,5 +1,7 @@
 #include "src/include/ix.h"
 #include <float.h>
+#include <iostream>
+#include <map>
 namespace PeterDB {
     IndexManager &IndexManager::instance() {
         static IndexManager _index_manager = IndexManager();
@@ -37,6 +39,7 @@ namespace PeterDB {
     }
 
     RC IndexManager::openFile(const std::string &fileName, IXFileHandle &ixFileHandle) {
+        if(ixFileHandle.getHandle().getFile() != nullptr) return -1;
         PagedFileManager& pagedFileManager = PagedFileManager::instance();
         FileHandle indexFileHandle;
         if(pagedFileManager.openFile(fileName, indexFileHandle)) return -1;
@@ -144,7 +147,7 @@ namespace PeterDB {
     RC IndexManager::insert_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid, void* &newChildEntry){
         void* page = malloc(PAGE_SIZE);
         ixFileHandle.readPage(node_page_index, page);
-        if(isInternalNode(ixFileHandle, node_page_index)){
+        if(isInternalNode(page)){
             int offset_for_pointer_page = get_page_pointer_offset_for_insertion(page, node_page_index, keyType, key);
             insert_util(ixFileHandle, *(int*)((char*)page + offset_for_pointer_page), keyType, key, rid, newChildEntry);
         //Implement rest of it
@@ -855,9 +858,7 @@ namespace PeterDB {
         return offset;
     }
 
-    bool IndexManager::isInternalNode(IXFileHandle &ixFileHandle, int node_page_index){
-        void* page = malloc(PAGE_SIZE);
-        ixFileHandle.readPage(node_page_index, page);
+    bool IndexManager::isInternalNode(void* &page) const{
         int type = *(int*)((char*)page + PAGE_SIZE - sizeof (unsigned ));
         if(type == 1) return false;
         return true;
@@ -990,7 +991,7 @@ namespace PeterDB {
         return -1;
     }
 
-    int IndexManager::get_root_page_index(IXFileHandle ixFileHandle){
+    int IndexManager::get_root_page_index(IXFileHandle ixFileHandle) const{
         void* page = malloc(PAGE_SIZE);
         if(ixFileHandle.readPage(0, page)){
             free(page);
@@ -1030,6 +1031,249 @@ namespace PeterDB {
     }
 
     RC IndexManager::printBTree(IXFileHandle &ixFileHandle, const Attribute &attribute, std::ostream &out) const {
+        int root_page_index = get_root_page_index(ixFileHandle);
+        if(root_page_index == -1){
+            out << "{}";
+            return 0;
+        }
+        printIndexNode(ixFileHandle, attribute.type, out, root_page_index);
+        return 0;
+    }
+    //print format : ["A:[(1,1),(1,2)]","B:[(2,1),(2,2)]"]
+    RC IndexManager::printLeafNode (void* &page, AttrType attrType, std::ostream &out) const{
+        out << "[";
+        int num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+        if(num_keys == 0){
+            out << "]";
+            return 0;
+        }
+        if(attrType == TypeInt){
+            std::map<int, std::vector<Entry>> map;
+            int i = 0;
+            int offset = 0;
+            while(i < num_keys){
+                i++;
+                int key  = *(int*)((char*)page + offset);
+                offset += sizeof (unsigned );
+
+                int pageNum = *(int*)((char*)page + offset);
+                offset += sizeof (unsigned );
+                int slotNum = *(int*)((char*)page + offset);
+                offset += sizeof (unsigned );
+
+                Entry entry(pageNum, slotNum);
+                bool key_exists = false;
+
+
+                if(map.find(key) != map.end()){
+                    key_exists = true;
+                }
+                if(key_exists){
+                    std::vector<Entry> v = map[key];
+                    v.push_back(entry);
+                    map[key] = v;
+                }else{
+                    std::vector<Entry> v;
+                    v.push_back(entry);
+                    map[key] = v;
+                }
+            }
+            int map_size = map.size();
+            int processed = 0;
+            for (auto const &pair: map) {
+                processed++;
+                out << "\"" << pair.first << ":["; //["A:[
+                std::vector<Entry> val = pair.second;
+                for(int l = 0; l < val.size();l++){
+                    out << "(" << val.at(l).pageNum << "," << val.at(l).slotNum << ")";  //["A:[(1,1)
+
+                    if(l != val.size() -1){
+                        out << ","; // ["A:[(1,1),(1,2)
+                    }
+                }
+                out << "]" << "\"";
+                if(processed != map.size() -1){
+                    out << ",";  // ["A:[(1,1),(1,2)]","B:[(2,1),(2,2)]"
+                }
+            }
+
+        }else if(attrType == TypeReal){
+            std::map<float, std::vector<Entry>> map;
+            int i = 0;
+            int offset = 0;
+            while(i < num_keys){
+                i++;
+                float key  = *(float*)((char*)page + offset);
+                offset += sizeof (float);
+
+                int pageNum = *(int*)((char*)page + offset);
+                offset += sizeof (unsigned );
+                int slotNum = *(int*)((char*)page + offset);
+                offset += sizeof (unsigned );
+
+                Entry entry(pageNum, slotNum);
+                bool key_exists = false;
+
+                if(map.find(key) != map.end()){
+                    key_exists = true;
+                }
+
+                if(key_exists){
+                    std::vector<Entry> v = map[key];
+                    v.push_back(entry);
+                    map[key] = v;
+                }else{
+                    std::vector<Entry> v;
+                    v.push_back(entry);
+                    map[key] = v;
+                }
+            }
+            int map_size = map.size();
+            int processed = 0;
+            for (auto const &pair: map){
+                processed++;
+                out << "\"" << pair.first << ":["; //["A:[
+                std::vector<Entry> val = pair.second;
+                for(int l = 0; l < val.size();l++){
+                    out << "(" << val.at(l).pageNum << "," << val.at(l).slotNum << ")";  //["A:[(1,1)
+
+                    if(l != val.size() -1){
+                        out << ","; // ["A:[(1,1),(1,2)
+                    }
+                }
+                out << "]" << "\"";
+                if(processed != map.size() -1){
+                    out << ",";  // ["A:[(1,1),(1,2)]","B:[(2,1),(2,2)]"
+                }
+            }
+        }else{
+            std::map<std::string, std::vector<Entry>> map;
+            int i = 0;
+            int offset = 0;
+            while(i < num_keys){
+                int len = *(int*)((char*)page + offset);
+                offset += sizeof (unsigned );
+                char key[len + 1];
+                memcpy(key, (char*) page + offset, len * sizeof(char));
+                offset += len * sizeof (char);
+                key[len] = '\0';
+
+                int pageNum = *(int*)((char*)page + offset);
+                offset += sizeof (unsigned );
+                int slotNum = *(int*)((char*)page + offset);
+                offset += sizeof (unsigned );
+
+                Entry entry(pageNum, slotNum);
+                bool key_exists = false;
+
+                if(map.find(key) != map.end()){
+                    key_exists = true;
+                }
+                if(key_exists){
+                    std::vector<Entry> v = map[key];
+                    v.push_back(entry);
+                    map[key] = v;
+                }else{
+                    std::vector<Entry> v;
+                    v.push_back(entry);
+                    map[key] = v;
+                }
+            }
+            int map_size = map.size();
+            int processed = 0;
+            for (auto const &pair: map) {
+                processed++;
+                out << "\"" << pair.first << ":["; //["A:[
+                std::vector<Entry> val = pair.second;
+                for(int l = 0; l < val.size();l++){
+                    out << "(" << val.at(l).pageNum << "," << val.at(l).slotNum << ")";  //["A:[(1,1)
+
+                    if(l != val.size() -1){
+                        out << ","; // ["A:[(1,1),(1,2)
+                    }
+                }
+                out << "]" << "\"";
+                if(processed != map.size() -1){
+                    out << ",";  // ["A:[(1,1),(1,2)]","B:[(2,1),(2,2)]"
+                }
+            }
+        }
+        out << "]";
+    }
+
+    RC IndexManager::printIndexNode (IXFileHandle &ixFileHandle, AttrType attrType, std::ostream &out, int node_index) const{
+        out << "{\"keys\":";
+        void* page = malloc(PAGE_SIZE);
+        ixFileHandle.readPage(node_index, page);
+        bool is_internal = isInternalNode(page);
+        if(!is_internal){
+            printLeafNode(page, attrType, out);
+            out << "}";
+            return 0;
+        }
+        int num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+        //case handling for empty index node
+        //not sure if would occur, depends on deletion
+        if(num_keys == 0){
+            out << "[]";
+            out << ", \"children\": []";
+            out << "}";
+            return 0;
+        }
+        //else index_node has entries
+        std::vector<PageNum> children;
+        int offset = 0;
+        for(int i = 0; i < num_keys; i++){
+            if(i == 0) {
+                out << "[";
+            }
+            int child = *(int*)((char*)page + offset);
+            children.push_back(child);
+            offset += sizeof (unsigned );
+            if(attrType == TypeInt){
+                int key = *(int*)((char*)page + offset);
+                out << key;
+                offset += sizeof (unsigned );
+            }else if(attrType == TypeReal){
+                float key = *(float*)((char*)page + offset);
+                out << key;
+                offset += sizeof (float );
+            }else{
+                int len = *(int*)((char*)page + offset);
+                offset += sizeof (unsigned );
+                char array[len + 1];
+                memcpy(array, (char*) page + offset, len * sizeof(char));
+                offset += len * sizeof (char);
+                array[len] = '\0';
+                out << array;
+            }
+
+            if( i < (num_keys - 1)){
+                out << ",";
+            }else{
+                out << "],";
+            }
+        }
+        //till now, we created {"keys":["C","G","M"],
+        //push the last pointer page
+        children.push_back(*(int*)((char*) page + offset));
+        //Now create child
+        out << "\"children\": [";
+        for(int k = 0; k < children.size(); k++){
+            printIndexNode(ixFileHandle, attrType, out, children.at(k));
+            if(k != children.size() - 1){
+                out << ",";
+            }
+        }
+        out << "]" << "}";
+    }
+    RC IndexManager::preOrder(int node_index, IXFileHandle &ixFileHandle, const Attribute &attribute, std::ostream &out){
+        void* page = malloc(PAGE_SIZE);
+        memset(page, 0, PAGE_SIZE);
+        ixFileHandle.readPage(node_index, page);
+        bool is_internal = isInternalNode(page);
+
+
     }
 
     IX_ScanIterator::IX_ScanIterator() {

@@ -11,6 +11,16 @@
 
 namespace PeterDB {
 
+    class Entry{
+    public:
+        int pageNum;
+        int slotNum;
+        Entry(int pageNum, int slotNum){
+            this->pageNum = pageNum;
+            this->slotNum = slotNum;
+        }
+    };
+
     struct IndexNodeMetadata{
         int freeSpace;
         int numOfKeys;
@@ -94,7 +104,7 @@ namespace PeterDB {
         IndexManager &operator=(const IndexManager &) = default;                    // Prevent assignment
 
     private:
-        int get_root_page_index(IXFileHandle ixFileHandle);
+        int get_root_page_index(IXFileHandle ixFileHandle) const;
         int appendNewIndexPage(IXFileHandle &ixFileHandle, AttrType keyType, const void *key);
         //int appendNewLeafPageWithData(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid, int rightSibling);
         int appendNewLeafPageWithData(IXFileHandle &ixFileHandle, void* &data, int &data_len, int &rightSibling, int &freeSpace, int &num_keys, bool get_smallest_key, AttrType key_type, void* &smallest_key, int &len_smallest_key);
@@ -103,7 +113,7 @@ namespace PeterDB {
         int update_root_entry_dummy_page(IXFileHandle ixFileHandle, int rootIndex);
         RC updatePointerInParentNode(IXFileHandle &ixFileHandle, int parentIndex, bool isLeftPointer, int pointerVal, int index_of_key, AttrType keyType);
         RC insert_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid, void* &newChildEntry);
-        bool isInternalNode(IXFileHandle &ixFileHandle, int node_page_index);
+        bool isInternalNode(void* &page) const;
         int appendEmptyLeafPage(IXFileHandle &ixFileHandle, int rightSibling);
         int get_page_pointer_offset_for_insertion(void* &page, int node_page_index, AttrType keyType, const void *key);
         bool hasSpaceInLeafNode(void* &page, AttrType keyType, const void *key);
@@ -118,6 +128,9 @@ namespace PeterDB {
         RC get_smallest_key_value_on_leaf_page(void* &page, AttrType key_type, void* &smallest_key, int &len_key);
         bool hasSpaceIndexNode(void* &page, AttrType keyType, void* &newChildEntry);
         RC extractKeyFromNewChildEntry(void* &newChildEntry, void* &extracted_key, int& rightPointer, AttrType type);
+        RC printIndexNode (IXFileHandle &ixFileHandle, AttrType attrType, std::ostream &out, int node_index) const;
+        RC printLeafNode(void* &page, AttrType attrType, std::ostream &out) const;
+        RC preOrder(int node_index, IXFileHandle &ixFileHandle, const Attribute &attribute, std::ostream &out);
     };
 
     class IX_ScanIterator {
