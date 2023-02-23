@@ -2,6 +2,8 @@
 #include <float.h>
 #include <iostream>
 #include <map>
+#include <cstring>
+
 namespace PeterDB {
     IndexManager &IndexManager::instance() {
         static IndexManager _index_manager = IndexManager();
