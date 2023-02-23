@@ -64,7 +64,7 @@ namespace PeterDBTesting {
         // collect counters
         ASSERT_EQ(ixFileHandle.collectCounterValues(rcAfter, wcAfter, acAfter), success)
                                     << "indexManager::collectCounterValues() should succeed.";
-
+        //rcAfter = 4, wcAfter =3, acAfter = 4
         // check counters
         EXPECT_IN_RANGE(rcAfter - rc, 0, 1); // could read the tree root pointer
         EXPECT_IN_RANGE(wcAfter - wc, 0,

@@ -17,18 +17,18 @@ namespace PeterDB {
 
         PagedFileManager& pagedFileManager = PagedFileManager::instance();
         if(pagedFileManager.createFile(fileName)) return -1;
-        FileHandle indexFileHandle;
-        if(pagedFileManager.openFile(fileName, indexFileHandle)) return -1;
-
-
-        char* page = (char*)malloc(PAGE_SIZE);
-        memset(page, 0, PAGE_SIZE);
-        //indexFileHandle.readPage(0, page);
-        int root = -1;
-        memcpy(page + PAGE_SIZE - sizeof (unsigned ), &root,  sizeof (unsigned ));
-        indexFileHandle.appendPage(page);
-
-        if(pagedFileManager.closeFile(indexFileHandle)) return -1;
+//        FileHandle indexFileHandle;
+//        if(pagedFileManager.openFile(fileName, indexFileHandle)) return -1;
+//
+//
+//        char* page = (char*)malloc(PAGE_SIZE);
+//        memset(page, 0, PAGE_SIZE);
+//        //indexFileHandle.readPage(0, page);
+//        int root = -1;
+//        memcpy(page + PAGE_SIZE - sizeof (unsigned ), &root,  sizeof (unsigned ));
+//        indexFileHandle.appendPage(page);
+//
+//        if(pagedFileManager.closeFile(indexFileHandle)) return -1;
         return 0;
     }
 
@@ -63,15 +63,26 @@ namespace PeterDB {
         /rcAfter = 4, wcAfter =3, acAfter = 4
         */
     RC IndexManager::insertEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid) {
-        //read dummy page here to reduce one r
         void* dummy_page = malloc(PAGE_SIZE);
-        if(ixFileHandle.readPage(0, dummy_page)){
-            free(dummy_page);
-            return -1;
+
+        if(ixFileHandle.getNumberOfPages() == 0){
+            memset(dummy_page, 0, PAGE_SIZE);
+            //indexFileHandle.readPage(0, page);
+            int root = -1;
+            memcpy((char*)dummy_page + PAGE_SIZE - sizeof (unsigned ), &root,  sizeof (unsigned ));
+            ixFileHandle.appendPage(dummy_page);
+        }else{
+            if(ixFileHandle.readPage(0, dummy_page)){
+                free(dummy_page);
+                return -1;
+            }
         }
+
         int root_page_index = get_root_page_index_copy(dummy_page); // 1 r
 
         //If the tree is empty
+        /*
+         * First insertion: The root page will be a leafnode*/
         if(root_page_index == -1){
             /*
              * Insert leaf page with this key
@@ -93,19 +104,14 @@ namespace PeterDB {
             int rightSibling = -1;
             void* smallest_key = nullptr;
             int len_smallest_key = 0;
-            int rightPointer = appendNewLeafPageWithData(ixFileHandle, data, data_len, rightSibling, freeSpace, num_keys, false, attribute.type, smallest_key, len_smallest_key); // 1 a
+            root_page_index = appendNewLeafPageWithData(ixFileHandle, data, data_len, rightSibling, freeSpace, num_keys, false, attribute.type, smallest_key, len_smallest_key); // 1 a
 
 //            int rightPointer = appendNewLeafPageWithData(ixFileHandle, attribute, key, rid, -1);
 
             free(data);
-            int leftPointer = appendEmptyLeafPage(ixFileHandle, rightPointer); //1 a
-            //Add the pointer in the index node
 
-            root_page_index = appendNewIndexPageWithPointers(ixFileHandle, attribute.type, key, leftPointer, rightPointer); // 1 a
             //Update root page index in the dummy page;
             update_root_entry_dummy_page_copy(ixFileHandle, dummy_page, root_page_index); // 1 r, 1 w , can reduce 1 r
-            ixFileHandle.writePage(0, dummy_page);
-
             return 0;
         }
         void* newChildEntry = nullptr;
@@ -162,30 +168,30 @@ namespace PeterDB {
         ixFileHandle.readPage(node_page_index, page);
         if(isInternalNode(page)){
             int offset_for_pointer_page = get_page_pointer_offset_for_insertion(page, node_page_index, keyType, key);
-            int pointer_page = *(int*)((char*)page + offset_for_pointer_page);
-            /*
-             * This case happen when for example, only one entry has been inserted in a
-             * newly built B+ tree. So, one of the two pointe page is -1, i.e. not created
-             *
-             * In such case we create a leaf page, update pointer value in the index node, insert key in the leaf page
-             * Note: It will always be on the left of a key. So, we can
-             * get the rightSibling for this without hitting null*/
-            if(pointer_page == -1){
-                int rightSibling = 0;
-                if(keyType == TypeInt){
-                    rightSibling = *(int*)((char*)page + offset_for_pointer_page + 2*sizeof (unsigned ));
-                }else if(keyType == TypeReal){
-                    rightSibling = *(int*)((char*)page + offset_for_pointer_page + sizeof (float ) + sizeof (unsigned ));
-                }else{
-                    int len_varchar = *(int*)((char*)page + offset_for_pointer_page + sizeof (unsigned ));
-                    rightSibling = *(int*)((char*)page + offset_for_pointer_page + 2*sizeof (unsigned ) + len_varchar);
-                }
-
-                int build_left_pointer = appendEmptyLeafPage(ixFileHandle, rightSibling);
-                //update the leftPointer in page
-                memcpy((char*)page + offset_for_pointer_page, &build_left_pointer, sizeof (unsigned ));
-                ixFileHandle.writePage(node_page_index, page);
-            }
+//            int pointer_page = *(int*)((char*)page + offset_for_pointer_page);
+//            /*
+//             * This case happen when for example, only one entry has been inserted in a
+//             * newly built B+ tree. So, one of the two pointe page is -1, i.e. not created
+//             *
+//             * In such case we create a leaf page, update pointer value in the index node, insert key in the leaf page
+//             * Note: It will always be on the left of a key. So, we can
+//             * get the rightSibling for this without hitting null*/
+//            if(pointer_page == -1){
+//                int rightSibling = 0;
+//                if(keyType == TypeInt){
+//                    rightSibling = *(int*)((char*)page + offset_for_pointer_page + 2*sizeof (unsigned ));
+//                }else if(keyType == TypeReal){
+//                    rightSibling = *(int*)((char*)page + offset_for_pointer_page + sizeof (float ) + sizeof (unsigned ));
+//                }else{
+//                    int len_varchar = *(int*)((char*)page + offset_for_pointer_page + sizeof (unsigned ));
+//                    rightSibling = *(int*)((char*)page + offset_for_pointer_page + 2*sizeof (unsigned ) + len_varchar);
+//                }
+//
+//                int build_left_pointer = appendEmptyLeafPage(ixFileHandle, rightSibling);
+//                //update the leftPointer in page
+//                memcpy((char*)page + offset_for_pointer_page, &build_left_pointer, sizeof (unsigned ));
+//                ixFileHandle.writePage(node_page_index, page);
+//            }
             insert_util(ixFileHandle, *(int*)((char*)page + offset_for_pointer_page), keyType, key, rid, newChildEntry);
         //Implement rest of it
             if(newChildEntry == nullptr)return 0;
@@ -1124,6 +1130,7 @@ namespace PeterDB {
             return 0;
         }
         //out << "{\"keys\":[\"200\"], \"children\":[{\"keys\":[\"200:[(500,20)]\"]}]}";
+        //out << "{\"keys\":[\"200:[(500,20)]\"]}";
         printIndexNode(ixFileHandle, attribute.type, out, root_page_index);
         return 0;
     }
