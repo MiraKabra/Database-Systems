@@ -3,6 +3,7 @@
 #include <iostream>
 #include <map>
 #include <cstring>
+#include <climits>
 
 namespace PeterDB {
     IndexManager &IndexManager::instance() {
