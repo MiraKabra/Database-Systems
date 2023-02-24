@@ -1123,7 +1123,8 @@ namespace PeterDB {
                           bool lowKeyInclusive,
                           bool highKeyInclusive,
                           IX_ScanIterator &ix_ScanIterator) {
-        return -1;
+        Attribute attributeCopy = attribute;
+        int rc = ix_ScanIterator.setScanner(ixFileHandle, attributeCopy, lowKey, highKey, lowKeyInclusive, highKeyInclusive);
     }
 
     RC IndexManager::printBTree(IXFileHandle &ixFileHandle, const Attribute &attribute, std::ostream &out) const {
@@ -1382,6 +1383,8 @@ namespace PeterDB {
         this->highKeyInclusive = -1;
         this->set_success = false;
         this->page = nullptr;
+        this->curr_leaf_page_keys_processed = 0;
+        this->curr_offset = 0;
     }
 
     IX_ScanIterator::~IX_ScanIterator() {
@@ -1391,10 +1394,177 @@ namespace PeterDB {
         bool is_internal = is_internal_node(this->page);
         if(is_internal){
             while(!is_internal_node(this->page)){
-
+                int offset = find_offset_for_target_pointer(this->page, lowKey, highKey, attribute.type);
+                int pointer_page = *(int*)((char*)page + offset);
+                this->ixFileHandle->readPage(pointer_page, this->page);
             }
         }
+        //Now it comes to leaf Node
+        //Go to the first key that satisfies the condition
+        int num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+        while(true){
+            this->curr_leaf_page_keys_processed++;
+            if(this->curr_leaf_page_keys_processed > num_keys){
+                int rightSibling = getRightSibling(page);
+                //end of all leaf pages
+                if(rightSibling == -1) return -1;
+
+                this->ixFileHandle->readPage(rightSibling, page);
+                this->curr_leaf_page_keys_processed = 0;
+                num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+                this->curr_offset = 0;
+            }
+            bool is_satisfied = is_record_satisfiable(page, this->curr_offset, rid, key);
+            if(is_satisfied) return 0;
+        }
         return 0;
+    }
+
+    bool IX_ScanIterator::is_record_satisfiable(void* &page, int &offset, RID &rid, void *key){
+        AttrType keyType = this->attribute.type;
+        bool satisfies = false;
+        bool firstCondition = false;
+        bool secondCondition = false;
+        if(keyType == TypeInt){
+            int inspect_key = *(int*)((char*)page + offset);
+            int lowKeyVal;
+            int highKeyVal;
+            if(lowKey == NULL){
+                lowKeyVal = INT_MIN;
+            }else{
+                lowKeyVal = *(int*)this->lowKey;
+            }
+            if(highKey == NULL){
+                highKeyVal = INT_MAX;
+            }else{
+                highKeyVal = *(int*)this->highKey;
+            }
+            if(this->lowKeyInclusive){
+                if(inspect_key >= lowKeyVal){
+                    firstCondition = true;
+                }
+            }else{
+                if(inspect_key > lowKeyVal){
+                    firstCondition = true;
+                }
+            }
+
+            if(this->highKeyInclusive){
+                if(inspect_key <= highKeyVal){
+                    secondCondition = true;
+                }
+            }else{
+                if(inspect_key < highKeyVal){
+                    secondCondition = true;
+                }
+            }
+            satisfies = (firstCondition & secondCondition);
+            if(satisfies){
+                memcpy(key, (char*)page + offset, sizeof (unsigned ));
+                offset += sizeof (unsigned );
+                memcpy(&rid.pageNum, (char*)page + offset, sizeof (unsigned ));
+                offset += sizeof (unsigned );
+                memcpy(&rid.slotNum, (char*)page + offset, sizeof (unsigned ));
+                offset += sizeof (unsigned );
+            }
+        }else if(keyType == TypeReal){
+            float inspect_key = *(float*)((char*)page + offset);
+            float lowKeyVal;
+            float highKeyVal;
+
+            if(lowKey == NULL){
+                lowKeyVal = -1*FLT_MAX;
+            }else{
+                lowKeyVal = *(float*)this->lowKey;
+            }
+            if(highKey == NULL){
+                highKeyVal = FLT_MAX;
+            }else{
+                highKeyVal = *(float*)this->highKey;
+            }
+
+            if(this->lowKeyInclusive){
+                if(inspect_key >= lowKeyVal){
+                    firstCondition = true;
+                }
+            }else{
+                if(inspect_key > lowKeyVal){
+                    firstCondition = true;
+                }
+            }
+
+            if(this->highKeyInclusive){
+                if(inspect_key <= highKeyVal){
+                    secondCondition = true;
+                }
+            }else{
+                if(inspect_key < highKeyVal){
+                    secondCondition = true;
+                }
+            }
+            satisfies = (firstCondition & secondCondition);
+            if(satisfies){
+                memcpy(key, (char*)page + offset, sizeof (float));
+                offset += sizeof (float);
+                memcpy(&rid.pageNum, (char*)page + offset, sizeof (unsigned ));
+                offset += sizeof (unsigned );
+                memcpy(&rid.slotNum, (char*)page + offset, sizeof (unsigned ));
+                offset += sizeof (unsigned );
+            }
+        }else{
+            int len = *(int*)((char*)page + offset);
+            char inspect_key[len + 1];
+            inspect_key[len] = '\0';
+            memcpy(&inspect_key, (char*)page + offset + sizeof (unsigned ), len);
+            char lowKeyVal[PAGE_SIZE] = "";
+            char highKeyVal[PAGE_SIZE] = "";
+
+            if(lowKey != NULL){
+                int low_len = *(int*)lowKey;
+                memcpy(&lowKeyVal, (char*)lowKey + sizeof (unsigned ), low_len);
+            }
+            if(highKey != NULL){
+                int high_len = *(int*)highKey;
+                memcpy(&highKeyVal, (char*)highKey + sizeof (unsigned ), high_len);
+            }
+
+            if(this->lowKeyInclusive){
+                if(strcmp(inspect_key, lowKeyVal) >= 0){
+                    firstCondition = true;
+                }
+            }else{
+                if(strcmp(inspect_key, lowKeyVal) > 0){
+                    firstCondition = true;
+                }
+            }
+            if(highKey == NULL){
+                secondCondition = true;
+            }else{
+                if(highKeyInclusive){
+                    if(strcmp(inspect_key, highKeyVal) <= 0){
+                        secondCondition = true;
+                    }else{
+                        if(strcmp(inspect_key, highKeyVal) < 0){
+                            secondCondition = true;
+                        }
+                    }
+                }
+            }
+            satisfies = (firstCondition & secondCondition);
+            if(satisfies){
+                memcpy(key, (char*)page + offset, sizeof (unsigned ) + len);
+                offset += sizeof (unsigned ) + len;
+                memcpy(&rid.pageNum, (char*)page + offset, sizeof (unsigned ));
+                offset += sizeof (unsigned );
+                memcpy(&rid.slotNum, (char*)page + offset, sizeof (unsigned ));
+                offset += sizeof (unsigned );
+            }
+        }
+        return satisfies;
+    }
+
+    int IX_ScanIterator::getRightSibling(void* &page){
+        return *(int*)((char*)page + PAGE_SIZE - 4*sizeof (unsigned ));
     }
 
     //  P(val < k) k P(val >= k)
@@ -1413,7 +1583,7 @@ namespace PeterDB {
      * than lowKey by default.
      *
      * if no k found greater than equal to lowKey, we need to go to the rightmost pointer of the index node*/
-    int IX_ScanIterator::find_offset_for_target_pointer(void* &page, const void *lowKey,const void *highKey,bool lowKeyInclusive, bool highKeyInclusive, AttrType keyType){
+    int IX_ScanIterator::find_offset_for_target_pointer(void* &page, const void *lowKey,const void *highKey, AttrType keyType){
         int i = 0;
         int offset = 0;
         int num_of_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
@@ -1537,7 +1707,19 @@ namespace PeterDB {
         return true;
     }
     RC IX_ScanIterator::close() {
-        return -1;
+        if(set_success){
+            free(this->page);
+        }
+        this->ixFileHandle = nullptr;
+        this->lowKey = nullptr;
+        this->highKey = nullptr;
+        this->lowKeyInclusive = -1;
+        this->highKeyInclusive = -1;
+        this->set_success = false;
+        this->page = nullptr;
+        this->curr_leaf_page_keys_processed = 0;
+        this->curr_offset = 0;
+        return 0;
     }
 
     RC IX_ScanIterator::setScanner(IXFileHandle &ixFileHandle,
@@ -1553,6 +1735,8 @@ namespace PeterDB {
         this->highKey = highKey;
         this->lowKeyInclusive = lowKeyInclusive;
         this->highKeyInclusive = highKeyInclusive;
+        this->curr_leaf_page_keys_processed = 0;
+        this->curr_offset = 0;
         this->page = malloc(PAGE_SIZE);
 
         memset(page, 0, PAGE_SIZE);

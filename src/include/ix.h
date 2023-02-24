@@ -167,6 +167,8 @@ namespace PeterDB {
         bool highKeyInclusive;
         bool set_success;
         void* page;
+        int curr_leaf_page_keys_processed;
+        int curr_offset;
 //        IXFileHandle* ixFileHandle = nullptr;
 //        Attribute &attribute;
 //        const void *lowKey = nullptr;
@@ -177,9 +179,10 @@ namespace PeterDB {
 //        void* page = nullptr;
 
         bool is_internal_node(void* &page);
+        int getRightSibling(void* &page);
+        bool is_record_satisfiable(void* &page, int &offset, RID &rid, void *key);
         int find_offset_for_target_pointer(void* &page, const void *lowKey,
-                                           const void *highKey,bool lowKeyInclusive,
-                                           bool highKeyInclusive , AttrType keyType);
+                                           const void *highKey, AttrType keyType);
     };
 
     class IXFileHandle {
