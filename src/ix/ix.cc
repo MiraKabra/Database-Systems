@@ -1125,6 +1125,7 @@ namespace PeterDB {
                           IX_ScanIterator &ix_ScanIterator) {
         Attribute attributeCopy = attribute;
         int rc = ix_ScanIterator.setScanner(ixFileHandle, attributeCopy, lowKey, highKey, lowKeyInclusive, highKeyInclusive);
+        return rc;
     }
 
     RC IndexManager::printBTree(IXFileHandle &ixFileHandle, const Attribute &attribute, std::ostream &out) const {
