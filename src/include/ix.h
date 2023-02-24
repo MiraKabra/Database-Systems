@@ -150,6 +150,36 @@ namespace PeterDB {
 
         // Terminate index scan
         RC close();
+
+        RC setScanner(IXFileHandle &ixFileHandle,
+                Attribute &attribute,
+                const void *lowKey,
+                const void *highKey,
+                bool lowKeyInclusive,
+                bool highKeyInclusive);
+
+    private:
+        IXFileHandle* ixFileHandle;
+        Attribute attribute;
+        const void *lowKey;
+        const void *highKey;
+        bool lowKeyInclusive;
+        bool highKeyInclusive;
+        bool set_success;
+        void* page;
+//        IXFileHandle* ixFileHandle = nullptr;
+//        Attribute &attribute;
+//        const void *lowKey = nullptr;
+//        const void *highKey = nullptr;
+//        bool lowKeyInclusive = -1;
+//        bool highKeyInclusive = -1;
+//        bool set_success = false;
+//        void* page = nullptr;
+
+        bool is_internal_node(void* &page);
+        int find_offset_for_target_pointer(void* &page, const void *lowKey,
+                                           const void *highKey,bool lowKeyInclusive,
+                                           bool highKeyInclusive , AttrType keyType);
     };
 
     class IXFileHandle {

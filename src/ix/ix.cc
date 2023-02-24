@@ -1375,17 +1375,195 @@ namespace PeterDB {
     }
 
     IX_ScanIterator::IX_ScanIterator() {
+        this->ixFileHandle = nullptr;
+        this->lowKey = nullptr;
+        this->highKey = nullptr;
+        this->lowKeyInclusive = -1;
+        this->highKeyInclusive = -1;
+        this->set_success = false;
+        this->page = nullptr;
     }
 
     IX_ScanIterator::~IX_ScanIterator() {
     }
 
     RC IX_ScanIterator::getNextEntry(RID &rid, void *key) {
+        bool is_internal = is_internal_node(this->page);
+        if(is_internal){
+            while(!is_internal_node(this->page)){
+
+            }
+        }
+        return 0;
+    }
+
+    //  P(val < k) k P(val >= k)
+    //k1 <= x < y < k2
+    /*
+     * Focus will be more on lowKey when searching. Depending on
+     * inclusivity: if a key has value greater than (lowKey not inclusive) lowKey
+     * or greater than equal to(inclusive) lowKey, we stop there
+     * Now, we need to choose the left pointer, in both inclusive and
+     * non-inclusive cases because k need not be equal to lowkey (eg.: lowkey 15, k = 17)
+     *Actually we just should see greater than equal to case for both inclusive and
+     * non-inclusive and go to left pointer
+     *Refinement: if key is exactly equal to lowKey, go to right pointer
+     * Now, if the k ever becomes greater than or equal to highKey,
+     * we go to left pointer. Note that in this case k is ofcourse more
+     * than lowKey by default.
+     *
+     * if no k found greater than equal to lowKey, we need to go to the rightmost pointer of the index node*/
+    int IX_ScanIterator::find_offset_for_target_pointer(void* &page, const void *lowKey,const void *highKey,bool lowKeyInclusive, bool highKeyInclusive, AttrType keyType){
+        int i = 0;
+        int offset = 0;
+        int num_of_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+        if(keyType == TypeInt){
+            int lowKeyVal;
+            int highKeyVal;
+
+            if(lowKey == NULL){
+                lowKeyVal = INT_MIN;
+            }else{
+                lowKeyVal = *(int*)lowKey;
+            }
+
+            if(highKey == NULL){
+                highKeyVal = INT_MAX;
+            }else{
+                highKeyVal = *(int*)highKey;
+            }
+
+            while(true){
+                i++;
+                int next_key = *(int*)((char*)page + offset + sizeof(unsigned));
+                //return right pointer
+                if(next_key == lowKeyVal){
+                    return offset + 2*sizeof (unsigned );
+                }
+                //return left pointer
+                if(next_key > lowKeyVal){
+                    return offset;
+                }
+
+                if(next_key >= highKeyVal){
+                    return offset;
+                }
+
+                //no key was found, return right most pointer
+                if(i == num_of_keys){
+                    return offset + 2*sizeof (unsigned );
+                }
+
+                offset += 2*sizeof (unsigned );
+            }
+        }else if(keyType == TypeReal){
+            float lowKeyVal;
+            float highKeyVal;
+
+            if(lowKey == NULL){
+                lowKeyVal = -1*FLT_MAX;
+            }else{
+                lowKeyVal = *(float*)lowKey;
+            }
+
+            if(highKey == NULL){
+                highKeyVal = FLT_MAX;
+            }else{
+                highKeyVal = *(float*)highKey;
+            }
+
+            while(true){
+                i++;
+                float next_key = *(float*)((char*)page + offset + sizeof(unsigned));
+                //return right pointer
+                if(next_key == lowKeyVal){
+                    return offset + sizeof (unsigned ) + sizeof (float );
+                }
+                //return left pointer
+                if(next_key > lowKeyVal){
+                    return offset;
+                }
+                if(next_key >= highKeyVal){
+                    return offset;
+                }
+                //no key was found, return right most pointer
+                if(i == num_of_keys){
+                    return offset + sizeof (unsigned ) + sizeof (float );
+                }
+                offset += sizeof (unsigned ) + sizeof (float );
+            }
+        }else{
+            //highKey null is tricky: what should be highest val of varchar?
+            // (next_key >= highKeyVal) case is actually not required
+            char lowKeyVal[PAGE_SIZE] = "";
+            char highKeyVal[PAGE_SIZE] = "";
+            if(lowKey != NULL){
+                int len = *(int*)((char*)lowKey);
+                memcpy(&lowKeyVal, (char*)lowKey + sizeof (unsigned ), len);
+            }
+            if(highKey != NULL){
+                int len = *(int*)((char*)highKey);
+                memcpy(&highKeyVal, (char*)highKey + sizeof (unsigned ), len);
+            }
+            while(true){
+                i++;
+                int next_key_len = *(int*)((char*)page + offset + sizeof(unsigned));
+                char next_key[next_key_len + 1];
+                next_key[next_key_len] = '\0';
+                memcpy(&next_key, (char*)page + offset + 2*sizeof(unsigned),  next_key_len);
+
+                //return right pointer
+                if(strcmp(next_key, lowKeyVal) == 0){
+                    return offset + 2*sizeof (unsigned ) + next_key_len;
+                }
+                //return left pointer
+                if(strcmp(next_key, lowKeyVal) > 0){
+                    return offset;
+                }
+                //no key was found, return right most pointer
+                if(i == num_of_keys){
+                    return offset + 2*sizeof (unsigned ) + next_key_len;
+                }
+                offset += 2*sizeof (unsigned ) + next_key_len;
+            }
+        }
+        //just for the sake of returning something
         return -1;
     }
 
+    bool IX_ScanIterator::is_internal_node(void* &page){
+        int type = *(int*)((char*)page + PAGE_SIZE - sizeof (unsigned ));
+        if(type == 1) return false;
+        return true;
+    }
     RC IX_ScanIterator::close() {
         return -1;
+    }
+
+    RC IX_ScanIterator::setScanner(IXFileHandle &ixFileHandle,
+                  Attribute &attribute,
+                  const void *lowKey,
+                  const void *highKey,
+                  bool lowKeyInclusive,
+                  bool highKeyInclusive){
+
+        this->ixFileHandle = &ixFileHandle;
+        this->attribute = attribute;
+        this->lowKey = lowKey;
+        this->highKey = highKey;
+        this->lowKeyInclusive = lowKeyInclusive;
+        this->highKeyInclusive = highKeyInclusive;
+        this->page = malloc(PAGE_SIZE);
+
+        memset(page, 0, PAGE_SIZE);
+        //read dummy page to get root page
+        ixFileHandle.readPage(0, page);
+        int root_index =  *(int*)((char*)page + PAGE_SIZE - sizeof (unsigned ));
+        //read the root page
+        ixFileHandle.readPage(root_index, page);
+
+        this->set_success = true;
+        return 0;
     }
 
     IXFileHandle::IXFileHandle() {
