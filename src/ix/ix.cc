@@ -95,16 +95,16 @@ namespace PeterDB {
             //Deduct 4*sizeof (unsigned ) for metadata
             //Deduct length of key
             //Deduct 2*sizeof (unsigned ) for rid (pagenum, slotnum)
-            int freeSpace = PAGE_SIZE - 4*sizeof (unsigned ) - key_len - 2*sizeof (unsigned );
+            int freeSpace = PAGE_SIZE - 4*sizeof (unsigned ) - key_len - sizeof (unsigned ) - 2*sizeof (char);
             int num_keys = 1;
-            int data_len = key_len + 2*sizeof (unsigned );
+            int data_len = key_len + sizeof (unsigned ) + 2*sizeof (char);
             void* data = malloc(data_len);
             int offset = 0;
             memcpy((char*)data + offset, key, key_len);
             offset += key_len;
             memcpy((char*)data + offset, &rid.pageNum, sizeof (unsigned ));
             offset += sizeof (unsigned );
-            memcpy((char*)data + offset, &rid.slotNum, sizeof (unsigned ));
+            memcpy((char*)data + offset, &rid.slotNum, 2*sizeof (char));
             int rightSibling = -1;
             void* smallest_key = nullptr;
             int len_smallest_key = 0;
@@ -441,7 +441,7 @@ namespace PeterDB {
 
         memcpy((char*)temp_page + offset, &rid.pageNum, sizeof (unsigned ));
         offset += sizeof (unsigned );
-        memcpy((char*)temp_page + offset, &rid.slotNum, sizeof (unsigned ));
+        memcpy((char*)temp_page + offset, &rid.slotNum, 2*sizeof (char));
 
         size_of_data_entry += required_space;
 
@@ -457,7 +457,7 @@ namespace PeterDB {
         int half_data_offset = 0;
         if(keyType == TypeInt){
             while(true){
-                int next_addition = 3*sizeof (unsigned );
+                int next_addition = 2*sizeof (unsigned ) + 2*sizeof (char);
                 if(half_data_offset + next_addition > size_of_data_entry/2){
                     break;
                 }
@@ -468,7 +468,7 @@ namespace PeterDB {
             }
         }else if(keyType == TypeReal){
             while(true){
-                int next_addition = sizeof (float) + 2*sizeof (unsigned );
+                int next_addition = sizeof (float) + sizeof (unsigned ) + 2*sizeof (char);
                 if(half_data_offset + next_addition > size_of_data_entry/2){
                     break;
                 }
@@ -480,7 +480,7 @@ namespace PeterDB {
         }else{
             while(true){
                 int next_varchar_len = *(int*)half_data_offset;
-                int next_addition = sizeof (unsigned ) + next_varchar_len + 2*sizeof (unsigned );
+                int next_addition = sizeof (unsigned ) + next_varchar_len + sizeof (unsigned ) + 2*sizeof (char);
                 if(half_data_offset + next_addition > size_of_data_entry/2){
                     break;
                 }
@@ -635,7 +635,7 @@ namespace PeterDB {
 
     RC IndexManager::find_offset_for_putting_key_in_leafNode(void* &page, AttrType keyType, const void *key, int& num_of_keys, int &required_space, int &keys_inspected, int &offset){
         if(keyType == TypeInt){
-            required_space = 3*sizeof (unsigned );
+            required_space = 2*sizeof (unsigned ) + 2*sizeof (char);
             int key_to_put = *(int*)key;
             while(keys_inspected < num_of_keys){
                 int curr_key_under_inspection = *(int*)((char*)page + offset);
@@ -643,10 +643,10 @@ namespace PeterDB {
                     break;
                 }
                 keys_inspected++;
-                offset += 3*sizeof (unsigned );
+                offset += 2*sizeof (unsigned ) + 2*sizeof (char);
             }
         }else if(keyType == TypeReal){
-            required_space = sizeof (float) + 2*sizeof (unsigned );
+            required_space = sizeof (float) + sizeof (unsigned ) + 2*sizeof (char);
             float key_to_put = *(float*)key;
             while(keys_inspected < num_of_keys){
                 float curr_key_under_inspection = *(float*)((char*)page + offset);
@@ -654,7 +654,7 @@ namespace PeterDB {
                     break;
                 }
                 keys_inspected++;
-                offset += 2*sizeof (unsigned ) + sizeof (float);
+                offset += sizeof (float) + sizeof (unsigned ) + 2*sizeof (char);
             }
         }else{
             int key_to_put_len = *(int*)key;
@@ -662,7 +662,7 @@ namespace PeterDB {
             memcpy(&key_to_put, (char*)key + sizeof (unsigned ), key_to_put_len);
             key_to_put[key_to_put_len] = '\0';
 
-            required_space = sizeof (unsigned ) + key_to_put_len + 2*sizeof (unsigned );
+            required_space = sizeof (unsigned ) + key_to_put_len + sizeof (unsigned ) + 2*sizeof (char);
             while(keys_inspected < num_of_keys){
                 int len_curr_key_under_inspection = *(int*)((char*)page + offset);
                 char curr_key_under_inspection[len_curr_key_under_inspection + 1];
@@ -673,7 +673,7 @@ namespace PeterDB {
                     break;
                 }
                 keys_inspected++;
-                offset += sizeof (unsigned ) + len_curr_key_under_inspection + 2*sizeof (unsigned );
+                offset += sizeof (unsigned ) + len_curr_key_under_inspection + sizeof (unsigned ) + 2*sizeof (char);
             }
         }
         return 0;
@@ -819,7 +819,7 @@ namespace PeterDB {
 
         memcpy((char*)page + offset, &rid.pageNum, sizeof (unsigned ));
         offset += sizeof (unsigned );
-        memcpy((char*)page + offset, &rid.slotNum, sizeof (unsigned ));
+        memcpy((char*)page + offset, &rid.slotNum, 2*sizeof (char));
 
         //update free space
         free_space = free_space - required_space;
@@ -834,7 +834,7 @@ namespace PeterDB {
         int free_space = *(int*)((char*)page + PAGE_SIZE - 3*sizeof (unsigned ));
         int len_key = get_length_of_key(keyType, key);
         //Add values for rid
-        int total_len_required = len_key + 2*sizeof (unsigned );
+        int total_len_required = len_key + sizeof (unsigned ) + 2*sizeof (char);
         if(total_len_required <= free_space) return true;
         return false;
     }
@@ -1179,8 +1179,9 @@ namespace PeterDB {
 
                 int pageNum = *(int*)((char*)page + offset);
                 offset += sizeof (unsigned );
-                int slotNum = *(int*)((char*)page + offset);
-                offset += sizeof (unsigned );
+                int slotNum = 0;
+                memcpy(&slotNum, (char*)page + offset, 2*sizeof (char));
+                offset += 2*sizeof (char);
 
                 Entry entry(pageNum, slotNum);
                 bool key_exists = false;
@@ -1229,8 +1230,10 @@ namespace PeterDB {
 
                 int pageNum = *(int*)((char*)page + offset);
                 offset += sizeof (unsigned );
-                int slotNum = *(int*)((char*)page + offset);
-                offset += sizeof (unsigned );
+
+                int slotNum = 0;
+                memcpy(&slotNum, (char*)page + offset, 2*sizeof (char));
+                offset += 2*sizeof (char);
 
                 Entry entry(pageNum, slotNum);
                 bool key_exists = false;
@@ -1281,8 +1284,10 @@ namespace PeterDB {
 
                 int pageNum = *(int*)((char*)page + offset);
                 offset += sizeof (unsigned );
-                int slotNum = *(int*)((char*)page + offset);
-                offset += sizeof (unsigned );
+
+                int slotNum = 0;
+                memcpy(&slotNum, (char*)page + offset, 2*sizeof (char));
+                offset += 2*sizeof (char);
 
                 Entry entry(pageNum, slotNum);
                 bool key_exists = false;
@@ -1486,10 +1491,10 @@ namespace PeterDB {
                 offset += sizeof (unsigned );
                 memcpy(&rid.pageNum, (char*)page + offset, sizeof (unsigned ));
                 offset += sizeof (unsigned );
-                memcpy(&rid.slotNum, (char*)page + offset, sizeof (unsigned ));
-                offset += sizeof (unsigned );
+                memcpy(&rid.slotNum, (char*)page + offset, 2*sizeof (char ));
+                offset += 2*sizeof (char );
             }else{
-                offset += 3*sizeof (unsigned );
+                offset += 2*sizeof (unsigned ) + 2*sizeof (char );
             }
         }else if(keyType == TypeReal){
             float inspect_key = *(float*)((char*)page + offset);
@@ -1532,10 +1537,10 @@ namespace PeterDB {
                 offset += sizeof (float);
                 memcpy(&rid.pageNum, (char*)page + offset, sizeof (unsigned ));
                 offset += sizeof (unsigned );
-                memcpy(&rid.slotNum, (char*)page + offset, sizeof (unsigned ));
-                offset += sizeof (unsigned );
+                memcpy(&rid.slotNum, (char*)page + offset, 2*sizeof (char ));
+                offset += 2*sizeof (char );
             }else{
-                offset += sizeof (float ) + 2*sizeof (unsigned );
+                offset += sizeof (float ) + sizeof (unsigned ) + 2*sizeof (char );
             }
         }else{
             int len = *(int*)((char*)page + offset);
@@ -1582,10 +1587,10 @@ namespace PeterDB {
                 offset += sizeof (unsigned ) + len;
                 memcpy(&rid.pageNum, (char*)page + offset, sizeof (unsigned ));
                 offset += sizeof (unsigned );
-                memcpy(&rid.slotNum, (char*)page + offset, sizeof (unsigned ));
-                offset += sizeof (unsigned );
+                memcpy(&rid.slotNum, (char*)page + offset, 2*sizeof (char ));
+                offset += 2*sizeof (char );
             }else{
-                offset += 3*sizeof (unsigned ) + len;
+                offset += 2*sizeof (unsigned ) + len + 2*sizeof (char );
             }
         }
         return satisfies;
