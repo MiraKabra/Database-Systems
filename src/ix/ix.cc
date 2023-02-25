@@ -43,7 +43,7 @@ namespace PeterDB {
 
     RC IndexManager::openFile(const std::string &fileName, IXFileHandle &ixFileHandle) {
 
-        //if(ixFileHandle.getHandle() != nullptr) return -1;
+        if(ixFileHandle.getHandle() != nullptr) return -1;
         PagedFileManager& pagedFileManager = PagedFileManager::instance();
         FileHandle *indexFileHandle = new FileHandle;
         if(pagedFileManager.openFile(fileName, *indexFileHandle)) return -1;
@@ -55,6 +55,7 @@ namespace PeterDB {
         PagedFileManager& pagedFileManager = PagedFileManager::instance();
         FileHandle* fl = ixFileHandle.getHandle();
         if(pagedFileManager.closeFile(*fl)) return -1;
+        ixFileHandle.setHandle(nullptr);
         return 0;
     }
 
