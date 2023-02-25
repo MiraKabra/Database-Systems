@@ -340,7 +340,7 @@ namespace PeterDB {
             }
         }else{
             while (true){
-                int next_varchar_len = *(int*)((char*)half_data_offset + sizeof (unsigned ));
+                int next_varchar_len = *(int*)((char*)temp_page + half_data_offset + sizeof (unsigned ));
                 int next_addition = 2*sizeof (unsigned ) + next_varchar_len;
                 if(half_data_offset + next_addition > size_of_data_entry/2){
                     break;
@@ -479,7 +479,7 @@ namespace PeterDB {
             }
         }else{
             while(true){
-                int next_varchar_len = *(int*)half_data_offset;
+                int next_varchar_len = *(int*)((char*)temp_page + half_data_offset);
                 int next_addition = sizeof (unsigned ) + next_varchar_len + sizeof (unsigned ) + 2*sizeof (char);
                 if(half_data_offset + next_addition > size_of_data_entry/2){
                     break;
@@ -1266,7 +1266,7 @@ namespace PeterDB {
                     }
                 }
                 out << "]" << "\"";
-                if(processed != map.size() -1){
+                if(processed != map.size()){
                     out << ",";  // ["A:[(1,1),(1,2)]","B:[(2,1),(2,2)]"
                 }
             }
@@ -1275,6 +1275,7 @@ namespace PeterDB {
             int i = 0;
             int offset = 0;
             while(i < num_keys){
+                i++;
                 int len = *(int*)((char*)page + offset);
                 offset += sizeof (unsigned );
                 char key[len + 1];
@@ -1319,7 +1320,7 @@ namespace PeterDB {
                     }
                 }
                 out << "]" << "\"";
-                if(processed != map.size() -1){
+                if(processed != map.size()){
                     out << ",";  // ["A:[(1,1),(1,2)]","B:[(2,1),(2,2)]"
                 }
             }
@@ -1574,10 +1575,10 @@ namespace PeterDB {
                 if(highKeyInclusive){
                     if(strcmp(inspect_key, highKeyVal) <= 0){
                         secondCondition = true;
-                    }else{
-                        if(strcmp(inspect_key, highKeyVal) < 0){
-                            secondCondition = true;
-                        }
+                    }
+                }else{
+                    if(strcmp(inspect_key, highKeyVal) < 0){
+                        secondCondition = true;
                     }
                 }
             }
