@@ -456,15 +456,35 @@ namespace PeterDB {
         int free_space_new_page = PAGE_SIZE - 4*sizeof (unsigned );
         int half_data_offset = 0;
         if(keyType == TypeInt){
+            int prev_key = 0;
             while(true){
+
                 int next_addition = 2*sizeof (unsigned ) + 2*sizeof (char);
+
                 if(half_data_offset + next_addition > size_of_data_entry/2){
                     break;
                 }
+                prev_key = *(int*)((char*)temp_page + half_data_offset);
                 half_data_offset += next_addition;
                 num_keys_old_page++;
                 num_keys_new_page--;
                 free_space_old_page -= next_addition;
+
+                int curr_key = *(int*)((char*)temp_page + half_data_offset);
+                if(prev_key == curr_key){
+                    while(prev_key == curr_key){
+                        half_data_offset += next_addition;
+
+                        num_keys_old_page++;
+                        num_keys_new_page--;
+                        free_space_old_page -= next_addition;
+
+                        prev_key = curr_key;
+                        next_addition = 2*sizeof (unsigned ) + 2*sizeof (char);
+                        curr_key = *(int*)((char*)temp_page + half_data_offset);
+                    }
+                    break;
+                }
             }
         }else if(keyType == TypeReal){
             while(true){
