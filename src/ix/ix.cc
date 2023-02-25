@@ -1826,6 +1826,7 @@ namespace PeterDB {
                   bool lowKeyInclusive,
                   bool highKeyInclusive){
 
+        if(ixFileHandle.getHandle() == nullptr) return -1;
         this->ixFileHandle = &ixFileHandle;
         this->attribute = attribute;
         this->lowKey = lowKey;
