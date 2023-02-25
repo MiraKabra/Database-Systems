@@ -473,41 +473,81 @@ namespace PeterDB {
                 int curr_key = *(int*)((char*)temp_page + half_data_offset);
                 if(prev_key == curr_key){
                     while(prev_key == curr_key){
-                        half_data_offset += next_addition;
 
+                        prev_key = curr_key;
+                        next_addition = 2*sizeof (unsigned ) + 2*sizeof (char);
+
+                        half_data_offset += next_addition;
                         num_keys_old_page++;
                         num_keys_new_page--;
                         free_space_old_page -= next_addition;
 
-                        prev_key = curr_key;
-                        next_addition = 2*sizeof (unsigned ) + 2*sizeof (char);
                         curr_key = *(int*)((char*)temp_page + half_data_offset);
                     }
                     break;
                 }
             }
         }else if(keyType == TypeReal){
+            float prev_key = 0;
             while(true){
                 int next_addition = sizeof (float) + sizeof (unsigned ) + 2*sizeof (char);
                 if(half_data_offset + next_addition > size_of_data_entry/2){
                     break;
                 }
+                prev_key = *(float*)((char*)temp_page + half_data_offset);
                 half_data_offset += next_addition;
                 num_keys_old_page++;
                 num_keys_new_page--;
                 free_space_old_page -= next_addition;
+
+                float curr_key = *(float *)((char*)temp_page + half_data_offset);
+                if(prev_key == curr_key){
+                    while(prev_key == curr_key){
+                        prev_key = curr_key; //Not really needed
+                        next_addition = sizeof (float) + sizeof (unsigned ) + 2*sizeof (char);
+
+                        half_data_offset += next_addition;
+                        num_keys_old_page++;
+                        num_keys_new_page--;
+                        free_space_old_page -= next_addition;
+
+                        curr_key = *(float*)((char*)temp_page + half_data_offset);
+                    }
+                    break;
+                }
             }
         }else{
+            char prev_key[PAGE_SIZE] = "";
             while(true){
                 int next_varchar_len = *(int*)((char*)temp_page + half_data_offset);
                 int next_addition = sizeof (unsigned ) + next_varchar_len + sizeof (unsigned ) + 2*sizeof (char);
                 if(half_data_offset + next_addition > size_of_data_entry/2){
                     break;
                 }
+                memcpy(&prev_key, (char*)temp_page + half_data_offset + sizeof (unsigned ), next_varchar_len);
                 half_data_offset += next_addition;
                 num_keys_old_page++;
                 num_keys_new_page--;
                 free_space_old_page -= next_addition;
+
+                char curr_key[PAGE_SIZE] = "";
+                int curr_varchar_len = *(int*)((char*)temp_page + half_data_offset);
+                memcpy(&curr_key, (char*)temp_page + half_data_offset + sizeof (unsigned ), curr_varchar_len);
+
+                if(strcmp(prev_key, curr_key) == 0){
+                    while(strcmp(prev_key, curr_key) == 0){
+                        next_addition = sizeof (unsigned ) + curr_varchar_len + sizeof (unsigned ) + 2*sizeof (char);
+
+                        half_data_offset += next_addition;
+                        num_keys_old_page++;
+                        num_keys_new_page--;
+                        free_space_old_page -= next_addition;
+
+                        curr_varchar_len = *(int*)((char*)temp_page + half_data_offset);
+                        memcpy(&curr_key, (char*)temp_page + half_data_offset + sizeof (unsigned ), curr_varchar_len);
+                    }
+                    break;
+                }
             }
         }
         free_space_new_page = free_space_new_page - (size_of_data_entry - half_data_offset);
