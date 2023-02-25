@@ -907,18 +907,21 @@ namespace PeterDB {
             int right_key_len = *(int*)((char*)page + sizeof (unsigned ));
             char rightKey[PAGE_SIZE] = "";
             memcpy(&rightKey, (char*)page + 2*sizeof (unsigned ), right_key_len);
+
             while(!(strcmp(given_val, leftKey) >= 0 && strcmp(given_val, rightKey) < 0)){
                 i++;
+
                 //No key found, so put the rightmost page
                 if(i+1 > num_of_keys){
                     offset += 2*sizeof(unsigned ) + right_key_len;
                     break;
                 }
+
                 offset += 2*sizeof(unsigned ) + right_key_len;
                 memcpy(&leftKey, (char*)page + offset - right_key_len, right_key_len);
                 leftKey[right_key_len] = '\0';
                 right_key_len = *(int*)((char*)page + offset + sizeof (unsigned ));
-                memcpy(&rightKey, (char*)page + offset + sizeof (unsigned ), right_key_len);
+                memcpy(&rightKey, (char*)page + offset + 2*sizeof (unsigned ), right_key_len);
                 rightKey[right_key_len] = '\0';
             }
         }
