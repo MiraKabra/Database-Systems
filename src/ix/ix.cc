@@ -43,7 +43,7 @@ namespace PeterDB {
 
     RC IndexManager::openFile(const std::string &fileName, IXFileHandle &ixFileHandle) {
 
-        if(ixFileHandle.getHandle() != nullptr) return -1;
+        //if(ixFileHandle.getHandle() != nullptr) return -1;
         PagedFileManager& pagedFileManager = PagedFileManager::instance();
         FileHandle *indexFileHandle = new FileHandle;
         if(pagedFileManager.openFile(fileName, *indexFileHandle)) return -1;
@@ -118,7 +118,12 @@ namespace PeterDB {
             return 0;
         }
         void* newChildEntry = nullptr;
-        insert_util(ixFileHandle, root_page_index, attribute.type, key, rid, newChildEntry);
+        int old_root_page = root_page_index;
+        if(insert_util(ixFileHandle, root_page_index, attribute.type, key, rid, newChildEntry, root_page_index))return -1;
+        //update the root page in dummy
+        if(old_root_page != root_page_index){
+            update_root_entry_dummy_page(ixFileHandle, root_page_index);
+        }
         return 0;
     }
 
@@ -166,7 +171,7 @@ namespace PeterDB {
         return 0;
     }
 
-    RC IndexManager::insert_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid, void* &newChildEntry){
+    RC IndexManager::insert_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid, void* &newChildEntry, int &root_page_index){
         void* page = malloc(PAGE_SIZE);
         ixFileHandle.readPage(node_page_index, page);
         if(isInternalNode(page)){
@@ -195,7 +200,7 @@ namespace PeterDB {
 //                memcpy((char*)page + offset_for_pointer_page, &build_left_pointer, sizeof (unsigned ));
 //                ixFileHandle.writePage(node_page_index, page);
 //            }
-            insert_util(ixFileHandle, *(int*)((char*)page + offset_for_pointer_page), keyType, key, rid, newChildEntry);
+            insert_util(ixFileHandle, *(int*)((char*)page + offset_for_pointer_page), keyType, key, rid, newChildEntry, root_page_index);
         //Implement rest of it
             if(newChildEntry == nullptr)return 0;
             else{
@@ -212,15 +217,17 @@ namespace PeterDB {
                      splitIndexNode(page, ixFileHandle, keyType, newChildEntry);
                      ixFileHandle.writePage(node_page_index, page);
                      //If a root page got split, create new node
-                     if(get_root_page_index(ixFileHandle) == node_page_index){
+                     if(root_page_index == node_page_index){
                         void* extracted_key = nullptr;
                         int rightPointer = 0;
                         extractKeyFromNewChildEntry(newChildEntry, extracted_key, rightPointer, keyType);
-                        int new_root_page_index = appendNewIndexPage(ixFileHandle, keyType, extracted_key);
-                        update_root_entry_dummy_page(ixFileHandle, new_root_page_index);
-                        updatePointerInParentNode(ixFileHandle, new_root_page_index, true, node_page_index, 0, keyType);
-                         updatePointerInParentNode(ixFileHandle, new_root_page_index, false, rightPointer, 0, keyType);
+                        //root_page_index = appendNewIndexPage(ixFileHandle, keyType, extracted_key);
+                        //update_root_entry_dummy_page(ixFileHandle, new_root_page_index);
+                        root_page_index = appendNewIndexPageWithPointers(ixFileHandle, keyType, extracted_key, node_page_index, rightPointer);
+                        //updatePointerInParentNode(ixFileHandle, new_root_page_index, true, node_page_index, 0, keyType);
+                         //updatePointerInParentNode(ixFileHandle, new_root_page_index, false, rightPointer, 0, keyType);
                          free(newChildEntry);
+                         newChildEntry = nullptr;
                          return 0;
                      }
                  }
@@ -237,10 +244,19 @@ namespace PeterDB {
             }else{
                 splitLeafNode(page, ixFileHandle, keyType, key, rid, newChildEntry);
                 if(ixFileHandle.writePage(node_page_index, page)) return -1;
+                //In case of leaf root page, because split happened, we need to make a new root page here.
+                if(newChildEntry != nullptr && node_page_index == root_page_index){
+                    void* copy_up_key = nullptr;
+                    int leftPointer = node_page_index;
+                    int rightPointer = 0;
+                    extractKeyFromNewChildEntry(newChildEntry, copy_up_key, rightPointer, keyType);
+                    root_page_index = appendNewIndexPageWithPointers(ixFileHandle, keyType, copy_up_key, leftPointer, rightPointer);
+                }
             }
         }
         return 0;
     }
+
     /*
      * Create a temp page of 2*PAGE_SIZE and insert the newChildEntry
      * Here interesting thing is that the push-up value will be inserted into newChildEntry
@@ -406,7 +422,7 @@ namespace PeterDB {
          * because in that case we won't need to shift anything*/
         if(keys_inspected != old_node_metadata.numOfKeys){
             //shift
-            memmove((char*)temp_page + offset + required_space, (char*)page + offset, size_of_data_entry - offset);
+            memmove((char*)temp_page + offset + required_space, (char*)temp_page + offset, size_of_data_entry - offset);
         }
         //put key
         if(keyType == TypeInt){
@@ -856,8 +872,9 @@ namespace PeterDB {
             int rightVal = *(int*)((char*)page + sizeof (unsigned ));
             while(!(key_val >= leftVal && key_val < rightVal)){
                 i++;
-                //No key found
+                //No key found, so put the rightmost page
                 if(i+1 > num_of_keys){
+                    offset += 2*sizeof (unsigned );
                     break;
                 }
                 offset += 2*sizeof (unsigned );
@@ -870,8 +887,9 @@ namespace PeterDB {
             float rightVal = *(float*)((char*)page + sizeof (unsigned ));
             while(!(key_val >= leftVal && key_val < rightVal)){
                 i++;
-                //No key found
+                //No key found, so put the rightmost page
                 if(i+1 > num_of_keys){
+                    offset += sizeof (unsigned ) + sizeof (float);
                     break;
                 }
                 offset += sizeof (unsigned ) + sizeof (float);
@@ -890,7 +908,9 @@ namespace PeterDB {
             memcpy(&rightKey, (char*)page + 2*sizeof (unsigned ), right_key_len);
             while(!(strcmp(given_val, leftKey) >= 0 && strcmp(given_val, rightKey) < 0)){
                 i++;
+                //No key found, so put the rightmost page
                 if(i+1 > num_of_keys){
+                    offset += 2*sizeof(unsigned ) + right_key_len;
                     break;
                 }
                 offset += 2*sizeof(unsigned ) + right_key_len;
@@ -1394,7 +1414,7 @@ namespace PeterDB {
     RC IX_ScanIterator::getNextEntry(RID &rid, void *key) {
         bool is_internal = is_internal_node(this->page);
         if(is_internal){
-            while(!is_internal_node(this->page)){
+            while(is_internal_node(this->page)){
                 int offset = find_offset_for_target_pointer(this->page, lowKey, highKey, attribute.type);
                 int pointer_page = *(int*)((char*)page + offset);
                 this->ixFileHandle->readPage(pointer_page, this->page);
@@ -1411,7 +1431,7 @@ namespace PeterDB {
                 if(rightSibling == -1) return -1;
 
                 this->ixFileHandle->readPage(rightSibling, page);
-                this->curr_leaf_page_keys_processed = 0;
+                this->curr_leaf_page_keys_processed = 1;
                 num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
                 this->curr_offset = 0;
             }
@@ -1467,6 +1487,8 @@ namespace PeterDB {
                 offset += sizeof (unsigned );
                 memcpy(&rid.slotNum, (char*)page + offset, sizeof (unsigned ));
                 offset += sizeof (unsigned );
+            }else{
+                offset += 3*sizeof (unsigned );
             }
         }else if(keyType == TypeReal){
             float inspect_key = *(float*)((char*)page + offset);
@@ -1511,6 +1533,8 @@ namespace PeterDB {
                 offset += sizeof (unsigned );
                 memcpy(&rid.slotNum, (char*)page + offset, sizeof (unsigned ));
                 offset += sizeof (unsigned );
+            }else{
+                offset += sizeof (float ) + 2*sizeof (unsigned );
             }
         }else{
             int len = *(int*)((char*)page + offset);
@@ -1559,6 +1583,8 @@ namespace PeterDB {
                 offset += sizeof (unsigned );
                 memcpy(&rid.slotNum, (char*)page + offset, sizeof (unsigned ));
                 offset += sizeof (unsigned );
+            }else{
+                offset += 3*sizeof (unsigned ) + len;
             }
         }
         return satisfies;
