@@ -116,6 +116,9 @@ namespace PeterDB {
         int update_root_entry_dummy_page_copy(IXFileHandle &ixFileHandle, void* &dummy_page, int rootIndex);
         RC updatePointerInParentNode(IXFileHandle &ixFileHandle, int parentIndex, bool isLeftPointer, int pointerVal, int index_of_key, AttrType keyType);
         RC insert_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid, void* &newChildEntry, int& root_page_index);
+        RC delete_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid);
+        int find_location_of_deleting_key(void* &page, AttrType keyType, const void *key, const RID &rid);
+        RC delete_entry_at_given_offset(void* &page, AttrType keyType, int offset_for_deletion, const void *key);
         bool isInternalNode(void* &page) const;
         int appendEmptyLeafPage(IXFileHandle &ixFileHandle, int rightSibling);
         int get_page_pointer_offset_for_insertion(void* &page, int node_page_index, AttrType keyType, const void *key);

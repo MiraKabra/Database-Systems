@@ -177,30 +177,7 @@ namespace PeterDB {
         ixFileHandle.readPage(node_page_index, page);
         if(isInternalNode(page)){
             int offset_for_pointer_page = get_page_pointer_offset_for_insertion(page, node_page_index, keyType, key);
-//            int pointer_page = *(int*)((char*)page + offset_for_pointer_page);
-//            /*
-//             * This case happen when for example, only one entry has been inserted in a
-//             * newly built B+ tree. So, one of the two pointe page is -1, i.e. not created
-//             *
-//             * In such case we create a leaf page, update pointer value in the index node, insert key in the leaf page
-//             * Note: It will always be on the left of a key. So, we can
-//             * get the rightSibling for this without hitting null*/
-//            if(pointer_page == -1){
-//                int rightSibling = 0;
-//                if(keyType == TypeInt){
-//                    rightSibling = *(int*)((char*)page + offset_for_pointer_page + 2*sizeof (unsigned ));
-//                }else if(keyType == TypeReal){
-//                    rightSibling = *(int*)((char*)page + offset_for_pointer_page + sizeof (float ) + sizeof (unsigned ));
-//                }else{
-//                    int len_varchar = *(int*)((char*)page + offset_for_pointer_page + sizeof (unsigned ));
-//                    rightSibling = *(int*)((char*)page + offset_for_pointer_page + 2*sizeof (unsigned ) + len_varchar);
-//                }
-//
-//                int build_left_pointer = appendEmptyLeafPage(ixFileHandle, rightSibling);
-//                //update the leftPointer in page
-//                memcpy((char*)page + offset_for_pointer_page, &build_left_pointer, sizeof (unsigned ));
-//                ixFileHandle.writePage(node_page_index, page);
-//            }
+
             insert_util(ixFileHandle, *(int*)((char*)page + offset_for_pointer_page), keyType, key, rid, newChildEntry, root_page_index);
         //Implement rest of it
             if(newChildEntry == nullptr)return 0;
@@ -1197,9 +1174,135 @@ namespace PeterDB {
     }
 
     RC IndexManager::deleteEntry(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *key, const RID &rid) {
-        return -1;
+        if(ixFileHandle.getNumberOfPages() == 0) return -1;
+
+        void* dummy_page = malloc(PAGE_SIZE);
+        if(ixFileHandle.readPage(0, dummy_page)){
+            free(dummy_page);
+            return -1;
+        }
+        int root_page_index = get_root_page_index_copy(dummy_page);
+
+        if(root_page_index == -1) return -1;
+
+        if(delete_util(ixFileHandle, root_page_index, attribute.type, key, rid)) return -1;
+        return 0;
     }
 
+    RC IndexManager::delete_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid){
+
+        void* page = malloc(PAGE_SIZE);
+        ixFileHandle.readPage(node_page_index, page);
+        if(isInternalNode(page)){
+            int offset_for_pointer_page = get_page_pointer_offset_for_insertion(page, node_page_index, keyType, key);
+            if(delete_util(ixFileHandle, *(int*)((char*)page + offset_for_pointer_page), keyType, key, rid)) return -1;
+        }else{
+            int num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+            //After introducing deletion operation, num_keys = 0 is possible
+            if(num_keys == 0) return -1;
+            int offset_for_deletion = find_location_of_deleting_key(page, keyType, key, rid);
+            //not found : 404
+            if(offset_for_deletion == -1) return -1;
+            delete_entry_at_given_offset(page, keyType,offset_for_deletion, key);
+            //Now write the page
+            if(ixFileHandle.writePage(node_page_index, page)) return -1;
+        }
+        return 0;
+    }
+
+    RC IndexManager::delete_entry_at_given_offset(void* &page, AttrType keyType, int offset_for_deletion, const void *key){
+        int offset = PAGE_SIZE - 4*sizeof (unsigned );
+        LeafNodeMetadata leaf_metadata;
+        memcpy(&leaf_metadata.rightSibling, (char*)page + offset, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+        memcpy(&leaf_metadata.freeSpace, (char*)page + offset, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+        memcpy(&leaf_metadata.numOfKeys, (char*)page + offset, sizeof (unsigned ));
+
+        int size_of_data_entry = PAGE_SIZE - leaf_metadata.freeSpace - 4*sizeof (unsigned );
+        int len_of_deleting_entry = 0;
+        int moving_len = 0;
+        if(keyType == TypeInt){
+            len_of_deleting_entry = 2*sizeof (unsigned ) + 2*sizeof (char);
+            moving_len = size_of_data_entry - offset_for_deletion - len_of_deleting_entry;
+        }else if(keyType == TypeReal){
+            len_of_deleting_entry = sizeof (float) + sizeof (unsigned ) + 2*sizeof (char);
+            moving_len = size_of_data_entry - offset_for_deletion - len_of_deleting_entry;
+        }else{
+            int len_key = *(int*)((char*)page + offset_for_deletion);
+            len_of_deleting_entry =  sizeof (unsigned ) + len_key + sizeof (unsigned ) + 2*sizeof (char);
+            moving_len = size_of_data_entry - offset_for_deletion - len_of_deleting_entry;
+        }
+
+
+        //left shift
+        if(leaf_metadata.numOfKeys != 1){
+            memmove((char*)page + offset_for_deletion, (char*)page + offset_for_deletion + len_of_deleting_entry, moving_len);
+            memset((char*)page + size_of_data_entry - len_of_deleting_entry, 0, len_of_deleting_entry);
+        }
+        leaf_metadata.numOfKeys--;
+        leaf_metadata.freeSpace += len_of_deleting_entry;
+
+        //update metadata
+        offset = PAGE_SIZE - 3*sizeof (unsigned );
+        memcpy((char*)page + offset, &leaf_metadata.freeSpace, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+        memcpy((char*)page + offset, &leaf_metadata.numOfKeys, sizeof (unsigned ));
+
+        return 0;
+    }
+
+    //There can be duplicate keys. So, this time rid values also needs to be compared
+    int IndexManager::find_location_of_deleting_key(void* &page, AttrType keyType, const void *key, const RID &rid){
+        int num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+        int inspected_keys = 0;
+        int offset = 0;
+        while(inspected_keys < num_keys){
+            inspected_keys++;
+            if(keyType == TypeInt){
+                int given_key = *(int*)key;
+                int curr_key = *(int*)((char*)page + offset);
+                if(curr_key == given_key){
+                    int curr_pagenum = 0;
+                    int curr_slotnum = 0;
+                    memcpy(&curr_pagenum, (char*)page + offset + sizeof (unsigned ), sizeof (unsigned ));
+                    memcpy(&curr_slotnum, (char*)page + offset + 2*sizeof (unsigned ), 2*sizeof (char ));
+                    if((curr_pagenum == rid.pageNum) && (curr_slotnum == rid.slotNum)) return offset;
+                }
+                offset += 2*sizeof (unsigned ) + 2*sizeof (char);
+            }else if(keyType == TypeReal){
+                float given_key = *(float*)key;
+                float curr_key = *(float*)((char*)page + offset);
+                if(curr_key == given_key){
+                    int curr_pagenum = 0;
+                    int curr_slotnum = 0;
+                    memcpy(&curr_pagenum, (char*)page + offset + sizeof (float ), sizeof (unsigned ));
+                    memcpy(&curr_slotnum, (char*)page + offset + sizeof (float) +sizeof (unsigned ), 2*sizeof (char ));
+                    if((curr_pagenum == rid.pageNum) && (curr_slotnum == rid.slotNum)) return offset;
+                }
+                offset += sizeof (float) + sizeof (unsigned ) + 2*sizeof (char);
+            }else{
+                int given_key_len = *(int*)key;
+                char given_key[given_key_len + 1];
+                memcpy(&given_key, (char*)key + sizeof (unsigned ), given_key_len);
+
+                int curr_key_len = *(int*)((char*)page + offset);
+                char curr_key[curr_key_len + 1];
+                memcpy(&curr_key, (char*)page + offset + sizeof (unsigned ), curr_key_len);
+                if(strcmp(curr_key, given_key) == 0){
+                    int curr_pagenum = 0;
+                    int curr_slotnum = 0;
+                    memcpy(&curr_pagenum, (char*)page + offset + sizeof (unsigned ) + curr_key_len, sizeof (unsigned ));
+                    memcpy(&curr_slotnum, (char*)page + offset + curr_key_len + 2*sizeof (unsigned ), 2*sizeof (char ));
+                    if((curr_pagenum == rid.pageNum) && (curr_slotnum == rid.slotNum)) return offset;
+                }
+                offset += 2*sizeof (unsigned ) + curr_key_len + 2*sizeof (char );
+            }
+        }
+
+        //if it came here, it did not find the key
+        return -1;
+    }
     RC IndexManager::scan(IXFileHandle &ixFileHandle,
                           const Attribute &attribute,
                           const void *lowKey,
@@ -1495,15 +1598,28 @@ namespace PeterDB {
         int num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
         while(true){
             this->curr_leaf_page_keys_processed++;
-            if(this->curr_leaf_page_keys_processed > num_keys){
-                int rightSibling = getRightSibling(page);
-                //end of all leaf pages
-                if(rightSibling == -1) return -1;
+            if(this->curr_leaf_page_keys_processed > num_keys || num_keys == 0){
+                if(num_keys == 0){
+                    while(num_keys == 0){
+                        int rightSibling = getRightSibling(page);
+                        //end of all leaf pages
+                        if(rightSibling == -1) return -1;
 
-                this->ixFileHandle->readPage(rightSibling, page);
-                this->curr_leaf_page_keys_processed = 1;
-                num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
-                this->curr_offset = 0;
+                        this->ixFileHandle->readPage(rightSibling, page);
+                        this->curr_leaf_page_keys_processed = 1;
+                        num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+                        this->curr_offset = 0;
+                    }
+                }else{
+                    int rightSibling = getRightSibling(page);
+                    //end of all leaf pages
+                    if(rightSibling == -1) return -1;
+
+                    this->ixFileHandle->readPage(rightSibling, page);
+                    this->curr_leaf_page_keys_processed = 1;
+                    num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+                    this->curr_offset = 0;
+                }
             }
             bool is_satisfied = is_record_satisfiable(page, this->curr_offset, rid, key);
             if(is_satisfied) return 0;
