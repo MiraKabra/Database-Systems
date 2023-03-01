@@ -463,7 +463,10 @@ namespace PeterDB {
                 int curr_key = *(int*)((char*)temp_page + half_data_offset);
                 if(prev_key == curr_key){
                     while(prev_key == curr_key){
-
+                        //duplicate keys spanning, multiple pages case
+                        if(half_data_offset == PAGE_SIZE - 4*sizeof (unsigned )){
+                            break;
+                        }
                         prev_key = curr_key;
                         next_addition = 2*sizeof (unsigned ) + 2*sizeof (char);
 
@@ -493,6 +496,10 @@ namespace PeterDB {
                 float curr_key = *(float *)((char*)temp_page + half_data_offset);
                 if(prev_key == curr_key){
                     while(prev_key == curr_key){
+                        //duplicate keys spanning, multiple pages case
+                        if(half_data_offset == PAGE_SIZE - 4*sizeof (unsigned )){
+                            break;
+                        }
                         prev_key = curr_key; //Not really needed
                         next_addition = sizeof (float) + sizeof (unsigned ) + 2*sizeof (char);
 
@@ -526,6 +533,10 @@ namespace PeterDB {
 
                 if(strcmp(prev_key, curr_key) == 0){
                     while(strcmp(prev_key, curr_key) == 0){
+                        //duplicate keys spanning, multiple pages case
+                        if(half_data_offset == PAGE_SIZE - 4*sizeof (unsigned )){
+                            break;
+                        }
                         next_addition = sizeof (unsigned ) + curr_varchar_len + sizeof (unsigned ) + 2*sizeof (char);
 
                         half_data_offset += next_addition;
@@ -1861,7 +1872,7 @@ namespace PeterDB {
                 int next_key = *(int*)((char*)page + offset + sizeof(unsigned));
                 //return right pointer
                 if(next_key == lowKeyVal){
-                    return offset + 2*sizeof (unsigned );
+                    return offset;
                 }
                 //return left pointer
                 if(next_key > lowKeyVal){
