@@ -64,7 +64,8 @@ N/A
 
 - Merge/non-lazy deletion (if applicable)
 
-
+Merge/non-lzy deletion has been implemented by redistributing entries when page becomes half ful and sibling has extra entries to spare. If sibling does not have extra entries, nodes get merged. When root has two child and they get merged, the current root no longer remains the root, and the merged node becomes the new root. This info gets updated in the dummy root 
+page as well.
 
 - Duplicate key span in a page
 

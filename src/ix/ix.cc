@@ -1313,15 +1313,17 @@ namespace PeterDB {
                 int leftSibling = 0;
                 int rightSibling = 0;
                 get_a_sibling_of_node(ixFileHandle, node_page_index, parent_page_index, leftSibling, rightSibling, keyType, oldChildEntry, false);
+                bool merged = false;
                 if(leftSibling != -1){
                     void* left_sib_page = malloc(PAGE_SIZE);
                     ixFileHandle.readPage(leftSibling, left_sib_page);
                     bool has_extra = has_extra_entries_indexnode(left_sib_page);
-                    if(has_extra){
+                    if(has_extra && !is_page_empty){
                         //This is where distribution will come
                         free(left_sib_page);
                     }else{
                         merge_two_index_pages(oldChildEntry, left_sib_page, page, keyType);
+                        merged = true;
                         ixFileHandle.writePage(leftSibling, left_sib_page);
                         free(left_sib_page);
                         free(page);
@@ -1331,14 +1333,21 @@ namespace PeterDB {
                     void* right_sib_page = malloc(PAGE_SIZE);
                     ixFileHandle.readPage(rightSibling, right_sib_page);
                     bool has_extra = has_extra_entries_indexnode(right_sib_page);
-                    if(has_extra){
+                    if(has_extra && !is_page_empty){
                         free(right_sib_page);
                     }else{
                         merge_two_index_pages(oldChildEntry, page, right_sib_page, keyType);
+                        merged = true;
                         ixFileHandle.writePage(node_page_index, page);
                         free(page);
                         //free(right_sib_page);
                         return 0;
+                    }
+                }
+                if(!merged){
+                    if(oldChildEntry != nullptr){
+                        free(oldChildEntry);
+                        oldChildEntry = nullptr;
                     }
                 }
             }
@@ -1593,15 +1602,22 @@ namespace PeterDB {
             void* left_sib_page = malloc(PAGE_SIZE);
             ixFileHandle.readPage(leftSibling, left_sib_page);
             bool has_extra = has_extra_entries_indexnode(left_sib_page);
-            if(!has_extra){
-                if(oldChildEntry != nullptr){
-                    free(oldChildEntry);
-                }
-                int len_of_key = *(int*)((char*)parent_page + key_after_left_sibling_offset);
-                oldChildEntry = malloc(sizeof (unsigned ) + len_of_key);
-                memcpy(oldChildEntry, (char*)parent_page + key_after_left_sibling_offset, sizeof (unsigned ) + len_of_key);
-                set_old_child = true;
+            if(oldChildEntry != nullptr){
+                free(oldChildEntry);
             }
+            int len_of_key = *(int*)((char*)parent_page + key_after_left_sibling_offset);
+            oldChildEntry = malloc(sizeof (unsigned ) + len_of_key);
+            memcpy(oldChildEntry, (char*)parent_page + key_after_left_sibling_offset, sizeof (unsigned ) + len_of_key);
+            set_old_child = true;
+//            if(!has_extra){
+//                if(oldChildEntry != nullptr){
+//                    free(oldChildEntry);
+//                }
+//                int len_of_key = *(int*)((char*)parent_page + key_after_left_sibling_offset);
+//                oldChildEntry = malloc(sizeof (unsigned ) + len_of_key);
+//                memcpy(oldChildEntry, (char*)parent_page + key_after_left_sibling_offset, sizeof (unsigned ) + len_of_key);
+//                set_old_child = true;
+//            }
             free(left_sib_page);
         }
         if(!set_old_child){
@@ -1609,15 +1625,22 @@ namespace PeterDB {
                 void* right_sib_page = malloc(PAGE_SIZE);
                 ixFileHandle.readPage(rightSibling, right_sib_page);
                 bool has_extra = has_extra_entries_indexnode(right_sib_page);
-                if(!has_extra){
-                    if(oldChildEntry != nullptr){
-                        free(oldChildEntry);
-                    }
-                    int len_of_key = *(int*)((char*)parent_page + key_before_right_sibling_offset);
-                    oldChildEntry = malloc(sizeof (unsigned ) + len_of_key);
-                    memcpy(oldChildEntry, (char*)parent_page + key_before_right_sibling_offset, sizeof (unsigned ) + len_of_key);
-                    set_old_child = true;
+                if(oldChildEntry != nullptr){
+                    free(oldChildEntry);
                 }
+                int len_of_key = *(int*)((char*)parent_page + key_before_right_sibling_offset);
+                oldChildEntry = malloc(sizeof (unsigned ) + len_of_key);
+                memcpy(oldChildEntry, (char*)parent_page + key_before_right_sibling_offset, sizeof (unsigned ) + len_of_key);
+                set_old_child = true;
+//                if(!has_extra){
+//                    if(oldChildEntry != nullptr){
+//                        free(oldChildEntry);
+//                    }
+//                    int len_of_key = *(int*)((char*)parent_page + key_before_right_sibling_offset);
+//                    oldChildEntry = malloc(sizeof (unsigned ) + len_of_key);
+//                    memcpy(oldChildEntry, (char*)parent_page + key_before_right_sibling_offset, sizeof (unsigned ) + len_of_key);
+//                    set_old_child = true;
+//                }
                 free(right_sib_page);
             }
         }
