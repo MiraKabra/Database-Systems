@@ -1215,22 +1215,30 @@ namespace PeterDB {
             free(dummy_page);
             return -1;
         }
+        if(attribute.type == TypeInt || attribute.type == TypeReal){
 
-        if(delete_util(ixFileHandle, root_page_index, attribute.type, key, rid)){
-            free(dummy_page);
-            return -1;
+            if(delete_util_common(ixFileHandle, root_page_index, attribute.type, key, rid)){
+                free(dummy_page);
+                return -1;
+            }
+        }else{
+            void* oldChildEntry = nullptr;
+            if(delete_util(ixFileHandle, root_page_index, root_page_index, attribute.type, key, rid, oldChildEntry)){
+                free(dummy_page);
+                return -1;
+            }
         }
+
         free(dummy_page);
         return 0;
     }
-
-    RC IndexManager::delete_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid){
+    RC IndexManager::delete_util_common(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid){
 
         void* page = malloc(PAGE_SIZE);
         ixFileHandle.readPage(node_page_index, page);
         if(isInternalNode(page)){
             int offset_for_pointer_page = get_page_pointer_offset_for_insertion(page, node_page_index, keyType, key);
-            if(delete_util(ixFileHandle, *(int*)((char*)page + offset_for_pointer_page), keyType, key, rid)){
+            if(delete_util_common(ixFileHandle, *(int*)((char*)page + offset_for_pointer_page), keyType, key, rid)){
                 free(page);
                 return -1;
             }
@@ -1255,6 +1263,487 @@ namespace PeterDB {
             }
         }
         free(page);
+        return 0;
+    }
+
+
+    //handle case when num_keys  = 0 in parent node(delete parent page/ root page)
+    RC IndexManager::delete_util(IXFileHandle &ixFileHandle, int parent_page_index, int node_page_index, AttrType keyType, const void *key, const RID &rid, void* &oldChildEntry){
+
+        void* page = malloc(PAGE_SIZE);
+        ixFileHandle.readPage(node_page_index, page);
+        if(isInternalNode(page)){
+            int offset_for_pointer_page = get_page_pointer_offset_for_insertion(page, node_page_index, keyType, key);
+            if(delete_util(ixFileHandle, node_page_index, *(int*)((char*)page + offset_for_pointer_page), keyType, key, rid, oldChildEntry)){
+                free(page);
+                return -1;
+            }
+            if(oldChildEntry == nullptr) return 0;
+            bool is_page_empty = false;
+            delete_key_and_right_pointer_index_node(page, oldChildEntry, is_page_empty, keyType);
+            ixFileHandle.writePage(node_page_index, page);
+            //A root became empty
+            //Special case, in this case the child becomes the root. note that we deleted a key and rightpointer.
+            //So the left pointer is left in this page which has the child value
+
+            //No sibling will be there if current page is root page
+            if(node_page_index == parent_page_index){
+                if(is_page_empty){
+                    int childLeft  = *(int*)(page);
+                    update_root_entry_dummy_page(ixFileHandle, childLeft);
+                    if(oldChildEntry != nullptr){
+                        free(oldChildEntry);
+                        oldChildEntry = nullptr;
+                    }
+                    //free(page);
+                    return 0;
+                }
+                return 0;
+            }
+
+
+            if(!check_underfilled_indexnode(page)){
+                if(oldChildEntry != nullptr){
+                    free(oldChildEntry);
+                    oldChildEntry = nullptr;
+                }
+                free(page);
+                return 0;
+            }else{
+                int leftSibling = 0;
+                int rightSibling = 0;
+                get_a_sibling_of_node(ixFileHandle, node_page_index, parent_page_index, leftSibling, rightSibling, keyType, oldChildEntry, false);
+                if(leftSibling != -1){
+                    void* left_sib_page = malloc(PAGE_SIZE);
+                    ixFileHandle.readPage(leftSibling, left_sib_page);
+                    bool has_extra = has_extra_entries_indexnode(left_sib_page);
+                    if(has_extra){
+                        //This is where distribution will come
+                        free(left_sib_page);
+                    }else{
+                        merge_two_index_pages(oldChildEntry, left_sib_page, page, keyType);
+                        ixFileHandle.writePage(leftSibling, left_sib_page);
+                        free(left_sib_page);
+                        free(page);
+                        return 0;
+                    }
+                }else{
+                    void* right_sib_page = malloc(PAGE_SIZE);
+                    ixFileHandle.readPage(rightSibling, right_sib_page);
+                    bool has_extra = has_extra_entries_indexnode(right_sib_page);
+                    if(has_extra){
+                        free(right_sib_page);
+                    }else{
+                        merge_two_index_pages(oldChildEntry, page, right_sib_page, keyType);
+                        ixFileHandle.writePage(node_page_index, page);
+                        free(page);
+                        //free(right_sib_page);
+                        return 0;
+                    }
+                }
+            }
+        }else{
+            int num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+            //After introducing deletion operation, num_keys = 0 is possible
+            if(num_keys == 0){
+                free(page);
+                return -1;
+            }
+            int offset_for_deletion = find_location_of_deleting_key(page, keyType, key, rid);
+            //not found : 404
+            if(offset_for_deletion == -1){
+                free(page);
+                return -1;
+            }
+            delete_entry_at_given_offset(page, keyType,offset_for_deletion, key);
+            int num_key_after_deletion = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+            if(node_page_index == parent_page_index){
+                ixFileHandle.writePage(node_page_index, page);
+                if(num_key_after_deletion == 0){
+                    update_root_entry_dummy_page(ixFileHandle, -1);
+                    if(oldChildEntry != nullptr){
+                        free(oldChildEntry);
+                        oldChildEntry = nullptr;
+                    }
+                    free(page);
+                    return 0;
+                }
+                return 0;
+
+            }
+            bool is_underFilled = check_underfilled_leafnode(page);
+
+            if(is_underFilled){
+                int leftSibling = 0;
+                int rightSibling = 0;
+                get_a_sibling_of_node(ixFileHandle, node_page_index, parent_page_index, leftSibling, rightSibling, keyType, oldChildEntry,true);
+                if(leftSibling != -1){
+                    void* left_sib_page = malloc(PAGE_SIZE);
+                    ixFileHandle.readPage(leftSibling, left_sib_page);
+                    bool has_extra = has_extra_entries_leafnode(left_sib_page, num_key_after_deletion);
+                    if(has_extra && num_key_after_deletion != 0){
+                        //This is where distribution will come
+                        free(left_sib_page);
+                    }else{
+                        //wrong (should be based on keytype)
+                        merge_two_leaf_pages(oldChildEntry, left_sib_page, page, keyType);
+                        ixFileHandle.writePage(leftSibling, left_sib_page);
+                        free(page);
+                        free(left_sib_page);
+                        return 0;
+                    }
+                }else{
+                    void* right_sib_page = malloc(PAGE_SIZE);
+                    ixFileHandle.readPage(rightSibling, right_sib_page);
+                    bool has_extra = has_extra_entries_leafnode(right_sib_page, num_key_after_deletion);
+                    if(has_extra && num_key_after_deletion != 0){
+                        //This is where distribution will come
+                        free(right_sib_page);
+                    }else{
+                        merge_two_leaf_pages(oldChildEntry, page, right_sib_page, keyType);
+                        ixFileHandle.writePage(node_page_index, page);
+                        //free(page);
+                        free(right_sib_page);
+                        return 0;
+                    }
+                }
+                //no case was possible, (was a redistribution case, which I did not implement)
+                //just write the page
+                if(ixFileHandle.writePage(node_page_index, page)){
+                    free(page);
+                    return -1;
+                }
+                free(page);
+                return 0;
+            }else{
+                //Now write the page
+                if(ixFileHandle.writePage(node_page_index, page)){
+                    free(page);
+                    return -1;
+                }
+                free(page);
+            }
+
+        }
+
+        return 0;
+    }
+
+    RC IndexManager::merge_two_leaf_pages(void* &oldChildEntry, void* &leftPage, void* &rightPage, AttrType keyType){
+        if(keyType == TypeInt){
+            oldChildEntry = malloc(sizeof (unsigned ));
+            memcpy(oldChildEntry, rightPage, sizeof (unsigned ));
+        }else if(keyType == TypeReal){
+            oldChildEntry = malloc(sizeof (float ));
+            memcpy(oldChildEntry, rightPage, sizeof (float));
+        }else{
+            int len = *(int*)rightPage;
+            oldChildEntry = malloc(sizeof (unsigned ) + len);
+            memcpy(oldChildEntry, rightPage, sizeof (unsigned ) + len);
+        }
+
+        int right_sibling_right_page = *(int*)((char*)rightPage + PAGE_SIZE - 4*sizeof (unsigned ));
+        int free_space_right_page = *(int*)((char*)rightPage + PAGE_SIZE - 3*sizeof (unsigned ));
+        int num_key_right_page = *(int*)((char*)rightPage + PAGE_SIZE - 2*sizeof (unsigned ));
+        int data_size_entry_right_page = PAGE_SIZE - free_space_right_page - 4*sizeof (unsigned );
+
+        int free_space_left_page = *(int*)((char*)leftPage + PAGE_SIZE - 3*sizeof (unsigned ));
+        int num_key_left_page = *(int*)((char*)leftPage + PAGE_SIZE - 2*sizeof (unsigned ));
+        int data_size_entry_left_page = PAGE_SIZE - free_space_left_page - 4*sizeof (unsigned );
+
+        memcpy((char*)leftPage + data_size_entry_left_page, rightPage, data_size_entry_right_page);
+
+        num_key_left_page += num_key_right_page;
+        free_space_left_page -= data_size_entry_right_page;
+        int right_sibling_left_page = right_sibling_right_page;
+
+        int offset = PAGE_SIZE - 4*sizeof (unsigned );
+        memcpy((char*)leftPage + offset, &right_sibling_left_page, sizeof (unsigned ));
+
+        offset += sizeof (unsigned );
+        memcpy((char*)leftPage + offset, &free_space_left_page, sizeof (unsigned ));
+
+        offset += sizeof (unsigned );
+        memcpy((char*)leftPage + offset, &num_key_left_page, sizeof (unsigned ));
+
+        return 0;
+    }
+
+    RC IndexManager::merge_two_index_pages(void* &oldChildEntry, void* &leftPage, void* &rightPage, AttrType keyType){
+        int free_space_left_page = *(int*)((char*)leftPage + PAGE_SIZE - 3*sizeof (unsigned ));
+        int num_keys_left_page = *(int*)((char*)leftPage + PAGE_SIZE - 2*sizeof (unsigned ));
+
+        int data_size_left_page = PAGE_SIZE - free_space_left_page - 3*sizeof (unsigned );
+
+        int free_space_right_page = *(int*)((char*)rightPage + PAGE_SIZE - 3*sizeof (unsigned ));
+        int num_keys_right_page = *(int*)((char*)rightPage + PAGE_SIZE - 2*sizeof (unsigned ));
+
+        int data_size_right_page = PAGE_SIZE - free_space_right_page - 3*sizeof (unsigned );
+
+        int offset = data_size_left_page;
+        if(keyType == TypeInt){
+            memcpy((char*)leftPage + offset, oldChildEntry, sizeof (unsigned ));
+            offset += sizeof (unsigned );
+            free_space_left_page -= sizeof (unsigned );
+        }else if(keyType == TypeReal){
+            memcpy((char*)leftPage + offset, oldChildEntry, sizeof (float ));
+            offset += sizeof (float );
+            free_space_left_page -= sizeof (float );
+        }else{
+            int len_key = *(int*)oldChildEntry;
+            memcpy((char*)leftPage + offset, oldChildEntry, sizeof (unsigned ) + len_key);
+            offset += (sizeof (unsigned ) + len_key);
+            free_space_left_page -= (sizeof (unsigned ) + len_key);
+        }
+
+        memcpy((char*)leftPage + offset, rightPage, data_size_right_page);
+        num_keys_left_page = num_keys_left_page + 1 + num_keys_right_page;
+        free_space_left_page -= data_size_right_page;
+        memcpy((char*)leftPage + PAGE_SIZE - 3*sizeof (unsigned ), &free_space_left_page, sizeof (unsigned ));
+        memcpy((char*)leftPage + PAGE_SIZE - 2*sizeof (unsigned ), &num_keys_left_page, sizeof (unsigned ));
+        return 0;
+    }
+    bool IndexManager::has_extra_entries_leafnode(void* &page, int num_key_after_deletion){
+        int freeSpace = *(int*)((char*)page + PAGE_SIZE - 3*sizeof (unsigned ));
+        int data_size_entry = PAGE_SIZE - freeSpace - 4*sizeof (unsigned );
+        int req_space = 4+819+6;
+        if(data_size_entry <= PAGE_SIZE/2 || freeSpace >= req_space) return false;
+        return true;
+    }
+    bool IndexManager::has_extra_entries_indexnode(void *&page) {
+        int freeSpace = *(int*)((char*)page + PAGE_SIZE - 3*sizeof (unsigned ));
+        int data_size_entry = PAGE_SIZE - freeSpace - 3*sizeof (unsigned );
+        if(data_size_entry > PAGE_SIZE/2) return true;
+        return false;
+    }
+    bool IndexManager::check_underfilled_leafnode(void* &page){
+        int offset = PAGE_SIZE - 3*sizeof (unsigned );
+        int free_space = *(int*)((char*)page + offset);
+        offset += sizeof (unsigned );
+        int num_keys = *(int*)((char*)page + offset);
+        if(num_keys > 1) return false;
+        if(free_space > PAGE_SIZE/2) return true;
+        return false;
+    }
+
+    bool IndexManager::check_underfilled_indexnode(void* &page){
+        int offset = PAGE_SIZE - 3*sizeof (unsigned );
+        int free_space = *(int*)((char*)page + offset);
+        offset += sizeof (unsigned );
+        int num_keys = *(int*)((char*)page + offset);
+        if(free_space > PAGE_SIZE/2) return true;
+        return false;
+    }
+    //We are always finding this in index node
+    int IndexManager::get_a_sibling_of_node(IXFileHandle& ixFileHandle, int node_index, int parent_node, int& leftSibling, int& rightSibling, AttrType keyType, void* &oldChildEntry, bool isLeaf){
+        int key_after_left_sibling_offset = -1;
+        int key_before_right_sibling_offset = -1;
+        void* parent_page = malloc(PAGE_SIZE);
+        ixFileHandle.readPage(parent_node, parent_page);
+        int num_key_parent = *(int*)((char*)parent_page + PAGE_SIZE - 2*sizeof (unsigned ));
+        int offset = 0;
+        int key_inspected = 0;
+        leftSibling = -1;
+        if(keyType == TypeInt){
+            while(true){
+                int pointer = *(int*)((char*)parent_page + offset);
+                if(pointer == node_index) break;
+                leftSibling = pointer;
+                offset += 2*sizeof (unsigned );
+                key_inspected++;
+            }
+        }else if(keyType == TypeReal){
+            while(true){
+                int pointer = *(int*)((char*)parent_page + offset);
+                if(pointer == node_index) break;
+                leftSibling = pointer;
+                offset += sizeof (unsigned ) + sizeof (float);
+                key_inspected++;
+            }
+        }else{
+            while(true){
+                int pointer = *(int*)((char*)parent_page + offset);
+                key_before_right_sibling_offset = offset + sizeof (unsigned );
+                if(pointer == node_index) break;
+                leftSibling = pointer;
+                offset += sizeof (unsigned );
+                key_after_left_sibling_offset = offset;
+                int len = *(int*)((char*)parent_page + offset);
+                offset += sizeof (unsigned ) + len;
+                key_inspected++;
+            }
+
+        }
+
+        //no right sibling in this case
+        if(key_inspected == num_key_parent){
+            rightSibling = -1;
+        }else{
+            if(keyType == TypeInt){
+                rightSibling = *(int*)((char*)parent_page + offset + 2*sizeof (unsigned ));
+            }else if(keyType == TypeReal){
+                rightSibling = *(int*)((char*)parent_page + offset + sizeof (unsigned ) + sizeof (float ));
+            }else{
+                int next_key_len = *(int*)((char*)parent_page + offset + sizeof (unsigned ));
+                rightSibling = *(int*)((char*)parent_page + offset + 2*sizeof (unsigned ) + next_key_len);
+            }
+        }
+        bool set_old_child = false;
+        if(leftSibling != -1){
+            void* left_sib_page = malloc(PAGE_SIZE);
+            ixFileHandle.readPage(leftSibling, left_sib_page);
+            bool has_extra = has_extra_entries_indexnode(left_sib_page);
+            if(!has_extra){
+                if(oldChildEntry != nullptr){
+                    free(oldChildEntry);
+                }
+                int len_of_key = *(int*)((char*)parent_page + key_after_left_sibling_offset);
+                oldChildEntry = malloc(sizeof (unsigned ) + len_of_key);
+                memcpy(oldChildEntry, (char*)parent_page + key_after_left_sibling_offset, sizeof (unsigned ) + len_of_key);
+                set_old_child = true;
+            }
+            free(left_sib_page);
+        }
+        if(!set_old_child){
+            if(rightSibling != -1){
+                void* right_sib_page = malloc(PAGE_SIZE);
+                ixFileHandle.readPage(rightSibling, right_sib_page);
+                bool has_extra = has_extra_entries_indexnode(right_sib_page);
+                if(!has_extra){
+                    if(oldChildEntry != nullptr){
+                        free(oldChildEntry);
+                    }
+                    int len_of_key = *(int*)((char*)parent_page + key_before_right_sibling_offset);
+                    oldChildEntry = malloc(sizeof (unsigned ) + len_of_key);
+                    memcpy(oldChildEntry, (char*)parent_page + key_before_right_sibling_offset, sizeof (unsigned ) + len_of_key);
+                    set_old_child = true;
+                }
+                free(right_sib_page);
+            }
+        }
+
+//        //no left sibling in this case
+//        if(key_inspected == 0){
+//            leftSibling = -1;
+//        }else{
+//            leftSibling = *(int*)((char*)parent_page + offset - 2*sizeof (unsigned ));
+//        }
+        free(parent_page);
+        return 0;
+    }
+
+//    int IndexManager::underfilled_sibling_for_index_node(IXFileHandle& ixFileHandle, int node_index, int parent_node, int& sibling, bool is_left_sibling, void* &oldChildEntry, void* &sib_page, AttrType keyType){
+//        void* parent_page = malloc(PAGE_SIZE);
+//        ixFileHandle.readPage(parent_node, parent_page);
+//        int num_key_parent = *(int*)((char*)parent_page + PAGE_SIZE - 2*sizeof (unsigned ));
+//        int offset = 0;
+//        int key_inspected = 0;
+//        if(keyType == TypeInt){
+//            while(true){
+//                int pointer = *(int*)((char*)parent_page + offset);
+//                if(pointer == node_index) break;
+//                offset += 2*sizeof (unsigned );
+//                key_inspected++;
+//            }
+//        }else if(keyType == TypeReal){
+//
+//        }else{
+//
+//        }
+//
+//        //check right sibling in this case
+//        if(key_inspected != num_key_parent){
+//            sibling = *(int*)((char*)parent_page + offset + 2*sizeof (unsigned ));
+//            sib_page = malloc(PAGE_SIZE);
+//            ixFileHandle.readPage(sibling, sib_page);
+//            if(has_extra_entries_indexnode(sib_page)){
+//                free(sib_page);
+//                return -1;
+//            }else{
+//                if(oldChildEntry == nullptr){
+//                    oldChildEntry = malloc((sizeof (unsigned )));
+//                    memcpy(oldChildEntry, (char*)parent_page + offset + sizeof (unsigned ), sizeof (unsigned ));
+//                    is_left_sibling = false;
+//                    return 0;
+//                }
+//            }
+//        }
+//        //check left sibling in this case
+//        if(key_inspected != 0){
+//            sibling = *(int*)((char*)parent_page + offset - 2*sizeof (unsigned ));
+//            sib_page = malloc(PAGE_SIZE);
+//            ixFileHandle.readPage(sibling, sib_page);
+//            if(has_extra_entries_indexnode(sib_page)){
+//                free(sib_page);
+//                return -1;
+//            }else{
+//                if(oldChildEntry == nullptr){
+//                    oldChildEntry = malloc(sizeof (unsigned ));
+//                    memcpy(oldChildEntry, (char*)parent_page + offset - sizeof (unsigned ), sizeof (unsigned ));
+//                    is_left_sibling = true;
+//                    return 0;
+//                }
+//            }
+//        }
+//        return -1;
+//    }
+    RC IndexManager::delete_key_and_right_pointer_index_node(void* &page, void* &oldChildEntry, bool &is_page_empty, AttrType keyType){
+
+        int free_space = *(int*)((char*)page + PAGE_SIZE - 3*sizeof (unsigned ));
+        int num_keys = *(int*)((char*)page + PAGE_SIZE - 2*sizeof (unsigned ));
+        int size_of_data_entry = PAGE_SIZE - free_space - 3*sizeof (unsigned );
+        int offset = sizeof (unsigned );
+        //add for right pointer
+        int len_to_be_deleted = sizeof (unsigned );
+        int inspected_key = 0;
+        if(keyType == TypeInt){
+            int delete_key_val = *(int*)oldChildEntry;
+            while(true){
+                inspected_key++;
+                int key = *(int*)((char*)page + offset);
+                if(key == delete_key_val)break;
+                offset += 2*sizeof (unsigned );
+            }
+            len_to_be_deleted += sizeof (unsigned );
+        }else if(keyType == TypeReal){
+            float delete_key_val = *(float*)oldChildEntry;
+            while(true){
+                inspected_key++;
+                float key = *(float*)((char*)page + offset);
+                if(key == delete_key_val)break;
+                offset += (sizeof (float ) + sizeof (unsigned ));
+            }
+            len_to_be_deleted += sizeof (float);
+        }else{
+            int delete_key_len = *(int*)oldChildEntry;
+            char delete_key_val[delete_key_len + 1];
+            delete_key_val[delete_key_len] = '\0';
+            memcpy(&delete_key_val, (char*)oldChildEntry + sizeof (unsigned ), delete_key_len);
+            while(true){
+                inspected_key++;
+                int key_len = *(int*)((char*)page + offset);
+                char key[key_len + 1];
+                key[key_len] = '\0';
+                memcpy(&key, (char*)page + offset + sizeof (unsigned ), key_len);
+                if(strcmp(delete_key_val, key) == 0){
+                    len_to_be_deleted += sizeof (unsigned ) + key_len;
+                    break;
+                }
+                offset += sizeof (unsigned ) + key_len + sizeof (unsigned );
+            }
+        }
+
+        //If it's the last entry, no moving
+        if(inspected_key != num_keys){
+            memmove((char*)page + offset, (char*)page + offset + len_to_be_deleted, size_of_data_entry - offset - len_to_be_deleted);
+        }
+        num_keys--;
+        free_space += len_to_be_deleted;
+        if(num_keys == 0){
+            is_page_empty = true;
+        }
+        memcpy((char*)page + PAGE_SIZE - 3*sizeof (unsigned ), &free_space, sizeof (unsigned ));
+        memcpy((char*)page + PAGE_SIZE - 2*sizeof (unsigned ), &num_keys, sizeof (unsigned ));
         return 0;
     }
 

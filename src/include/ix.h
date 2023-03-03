@@ -116,7 +116,7 @@ namespace PeterDB {
         int update_root_entry_dummy_page_copy(IXFileHandle &ixFileHandle, void* &dummy_page, int rootIndex);
         RC updatePointerInParentNode(IXFileHandle &ixFileHandle, int parentIndex, bool isLeftPointer, int pointerVal, int index_of_key, AttrType keyType);
         RC insert_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid, void* &newChildEntry, int& root_page_index);
-        RC delete_util(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid);
+        RC delete_util(IXFileHandle &ixFileHandle, int parent_page_index, int node_page_index, AttrType keyType, const void *key, const RID &rid, void* &oldChildEntry);
         int find_location_of_deleting_key(void* &page, AttrType keyType, const void *key, const RID &rid);
         RC delete_entry_at_given_offset(void* &page, AttrType keyType, int offset_for_deletion, const void *key);
         bool isInternalNode(void* &page) const;
@@ -137,6 +137,16 @@ namespace PeterDB {
         RC printIndexNode (IXFileHandle &ixFileHandle, AttrType attrType, std::ostream &out, int node_index) const;
         RC printLeafNode(void* &page, AttrType attrType, std::ostream &out) const;
         RC preOrder(int node_index, IXFileHandle &ixFileHandle, const Attribute &attribute, std::ostream &out);
+        bool check_underfilled_leafnode(void* &page);
+        bool check_underfilled_indexnode(void* &page);
+        bool has_extra_entries_leafnode(void* &page, int num_key_after_deletion);
+        bool has_extra_entries_indexnode(void *&page);
+        int get_a_sibling_of_node(IXFileHandle& ixFileHandle, int node_index, int parent_node, int& leftSibling, int& rightSibling, AttrType keyType, void* &oldChildEntry, bool isLeaf);
+        RC merge_two_leaf_pages(void* &oldChildEntry, void* &leftPage, void* &rightPage, AttrType keyType);
+        RC delete_key_and_right_pointer_index_node(void* &page, void* &oldChildEntry, bool &is_page_empty, AttrType keyType);
+        int underfilled_sibling_for_index_node(IXFileHandle& ixFileHandle, int node_index, int parent_node, int& sibling, bool is_left_sibling, void* &oldChildEntry, void* &sib_page);
+        RC merge_two_index_pages(void* &oldChildEntry, void* &leftPage, void* &rightPage, AttrType keyType);
+        RC delete_util_common(IXFileHandle &ixFileHandle, int node_page_index, AttrType keyType, const void *key, const RID &rid);
     };
 
     class IX_ScanIterator {
