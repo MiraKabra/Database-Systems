@@ -48,9 +48,7 @@ namespace PeterDB {
                                 unsigned &appendPageCount);                 // Put current counter values into variables
         FILE* getFile();
         void setFile(FILE* file);
-        long int sizeOfFile(FILE* pFile);
         RC setCountersFromFile();
-        RC saveCountersToFile();
         RC createHiddenPage(FILE* file);
         RC updateCounterValue(int offset, int val, FILE* file);
     private:

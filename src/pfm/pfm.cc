@@ -255,15 +255,6 @@ namespace PeterDB {
         return 0;
     }
 
-    //Return size of the file
-    long int FileHandle::sizeOfFile(FILE* pFile){
-        fseek(pFile, 0, SEEK_END);
-        long int size = ftell(pFile);
-        //Set position indicator to the beginning of the file
-        rewind(pFile);
-        return size;
-    }
-
     RC FileHandle::createHiddenPage(FILE* file){
 
         void *insert = malloc(PAGE_SIZE);
