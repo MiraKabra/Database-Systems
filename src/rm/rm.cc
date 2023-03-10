@@ -78,8 +78,8 @@ namespace PeterDB {
         createDataForTables_table(2, "Columns", 1, table_entry[1]);
         createDataForTables_table(3, "Indexes", 1, table_entry[2]);
         //Create entries for 'Columns' table
-        void* column_entry[9];
-        for(int j = 0; j < 9; j++){
+        void* column_entry[12];
+        for(int j = 0; j < 12; j++){
             column_entry[j] = nullptr;
         }
 
@@ -92,6 +92,9 @@ namespace PeterDB {
         createDataForColumns_table(2, "column-type", TypeInt, 4, 3, column_entry[6]);
         createDataForColumns_table(2, "column-length", TypeInt, 4, 4, column_entry[7]);
         createDataForColumns_table(2, "column-position", TypeInt, 4, 5, column_entry[8]);
+        createDataForColumns_table(3, "table-id", TypeInt, 4, 1, column_entry[9]);
+        createDataForColumns_table(3, "attribute-name", TypeVarChar, 50, 2, column_entry[10]);
+        createDataForColumns_table(3, "file-name", TypeVarChar, 50, 3, column_entry[11]);
 
         RID rid;
         //Enter the "Tables" and "Columns" entries
@@ -103,7 +106,7 @@ namespace PeterDB {
             free(table_entry[i]);
         }
 
-        for(int i = 0; i < 9; i++) {
+        for(int i = 0; i < 12; i++) {
             if(i == 3) continue;
             if(rbfm.insertRecord(column_handle, getColumnAttribute(), column_entry[i], rid)){
                 free(column_entry[i]);
