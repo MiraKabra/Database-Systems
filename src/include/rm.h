@@ -49,10 +49,13 @@ namespace PeterDB {
         static int tableCount;
         std::string table = "Tables";
         std::string column = "Columns";
+        std::string index = "Indexes";
         std::string table_file = "Tables";
         std::string column_file = "Columns";
+        std::string index_file = "Indexes";
         FileHandle table_handle;
         FileHandle column_handle;
+        FileHandle index_handle;
         bool catalog_exists = false;
         static RelationManager &instance();
 

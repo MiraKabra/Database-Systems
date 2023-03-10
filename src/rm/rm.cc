@@ -17,7 +17,10 @@ namespace PeterDB {
         if(fileExists(this->table_file) && fileExists(this->column_file)){
             rbfm.openFile(this->table_file, this->table_handle);
             rbfm.openFile(this-> column_file, this->column_handle);
-
+            if(!fileExists(this->index_file)){
+                rbfm.createFile(this->index_file);
+            }
+            rbfm.openFile(this->index_file, this->index_handle);
             int count = 0;
             std::vector<std::string> attributeNames;
             void* value = malloc(10);
@@ -60,15 +63,20 @@ namespace PeterDB {
         //rbfm.createFile(table_file);
         //Create the column file , return -1 if it already exists
         if(rbfm.createFile(this->column_file) != 0) return -1;
-        //rbfm.createFile(column_file);
+
+        if(fileExists(this->index_file)){
+            if(rbfm.destroyFile(this->index_file)) return -1;
+        }
+        if(rbfm.createFile(this->index_file)) return -1;
         if(rbfm.openFile(this->table_file, this->table_handle)) return -1;
         if(rbfm.openFile(this->column_file, this->column_handle)) return -1;
+        if(rbfm.openFile(this->index_file, this->index_handle)) return -1;
         //Create entries for 'Tables' table
-        void* table_entry[2] = {nullptr, nullptr};
+        void* table_entry[3] = {nullptr, nullptr, nullptr};
 
         createDataForTables_table(1, "Tables", 1, table_entry[0]);
         createDataForTables_table(2, "Columns", 1, table_entry[1]);
-
+        createDataForTables_table(3, "Indexes", 1, table_entry[2]);
         //Create entries for 'Columns' table
         void* column_entry[9];
         for(int j = 0; j < 9; j++){
@@ -87,7 +95,7 @@ namespace PeterDB {
 
         RID rid;
         //Enter the "Tables" and "Columns" entries
-        for(int i = 0; i < 2; i++){
+        for(int i = 0; i < 3; i++){
             if(rbfm.insertRecord(table_handle, getTableAttribute(), table_entry[i], rid)){
                 free(table_entry[i]);
                 return -1;
@@ -108,7 +116,7 @@ namespace PeterDB {
             free(column_entry[3]);
         }
 
-        RelationManager::tableCount += 2;
+        RelationManager::tableCount += 3;
         this->catalog_exists = true;
         return 0;
     }
@@ -257,6 +265,10 @@ namespace PeterDB {
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         if(rbfm.destroyFile(table_file) != 0) return -1;
         if(rbfm.destroyFile(column_file) != 0) return -1;
+        if(fileExists(this->index_file)){
+            if(rbfm.destroyFile(this->index_file)) return -1;
+            RelationManager::index_handle = FileHandle();
+        }
         RelationManager::table_handle = FileHandle();
         RelationManager::column_handle = FileHandle();
         RelationManager::tableCount = 0;
