@@ -32,6 +32,13 @@ namespace PeterDB {
         bool set_success = false;
     };
 
+//    IXFileHandle &ixFileHandle,
+//    const Attribute &attribute,
+//    const void *lowKey,
+//    const void *highKey,
+//    bool lowKeyInclusive,
+//    bool highKeyInclusive,
+//    IX_ScanIterator &ix_ScanIterator
     // RM_IndexScanIterator is an iterator to go through index entries
     class RM_IndexScanIterator {
     public:
@@ -41,7 +48,16 @@ namespace PeterDB {
         // "key" follows the same format as in IndexManager::insertEntry()
         RC getNextEntry(RID &rid, void *key);    // Get next matching entry
         RC close();                              // Terminate index scan
-
+        RC setScanner(IXFileHandle &ixFileHandle,
+                      const Attribute &attribute,
+                      const void *lowKey,
+                      const void *highKey,
+                      bool lowKeyInclusive,
+                      bool highKeyInclusive);
+    private:
+        IX_ScanIterator ix_ScanIterator;
+        IXFileHandle ixFileHandle;
+        bool set_success = false;
     };
 
     // Relation Manager
@@ -69,7 +85,7 @@ namespace PeterDB {
         RC deleteTable(const std::string &tableName);
 
         RC getAttributes(const std::string &tableName, std::vector<Attribute> &attrs);
-
+        Attribute get_attribute_from_name(const std::string &tableName, const std::string &attributeName);
         RC insertTuple(const std::string &tableName, const void *data, RID &rid);
 
         RC deleteTuple(const std::string &tableName, const RID &rid);

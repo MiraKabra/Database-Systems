@@ -915,20 +915,54 @@ namespace PeterDB {
                  bool lowKeyInclusive,
                  bool highKeyInclusive,
                  RM_IndexScanIterator &rm_IndexScanIterator){
-        return -1;
+        IndexManager& ix = IndexManager::instance();
+        IXFileHandle curr_ix_file_handle;
+        Attribute attribute = get_attribute_from_name(tableName, attributeName);
+        if(ix.openFile(tableName, curr_ix_file_handle)) return -1;
+        rm_IndexScanIterator.setScanner(curr_ix_file_handle, attribute, lowKey, highKey, lowKeyInclusive, highKeyInclusive);
+        return 0;
     }
 
+    Attribute RelationManager::get_attribute_from_name(const std::string &tableName, const std::string &attributeName){
+        Attribute attr;
+        std::vector<Attribute> recordDescriptor;
+        getAttributes(tableName, recordDescriptor);
+        for(Attribute attribute: recordDescriptor){
+            if(attribute.name == attributeName){
+                attr = attribute;
+                break;
+            }
+        }
+        return attr;
+    }
 
     RM_IndexScanIterator::RM_IndexScanIterator() = default;
 
     RM_IndexScanIterator::~RM_IndexScanIterator() = default;
 
     RC RM_IndexScanIterator::getNextEntry(RID &rid, void *key){
-        return -1;
+        if(this->ix_ScanIterator.getNextEntry(rid, key) == RM_EOF) return RM_EOF;
+        return 0;
+    }
+
+    RC RM_IndexScanIterator::setScanner(IXFileHandle &ixFileHandle, const Attribute &attribute, const void *lowKey, const void *highKey, bool lowKeyInclusive, bool highKeyInclusive) {
+        IndexManager& ix = IndexManager::instance();
+        this->ixFileHandle = ixFileHandle;
+        int rc = ix.scan(this->ixFileHandle, attribute, lowKey, highKey, lowKeyInclusive, highKeyInclusive, this->ix_ScanIterator);
+        if(rc == 0){
+            this->set_success = true;
+        }
+        return rc;
     }
 
     RC RM_IndexScanIterator::close(){
-        return -1;
+        IndexManager& ix = IndexManager::instance();
+        if(set_success){
+            ix.closeFile(this->ixFileHandle);
+            this->ix_ScanIterator.close();
+        }
+        this->set_success = false;
+        return 0;
     }
 
 } // namespace PeterDB
