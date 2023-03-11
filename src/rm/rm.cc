@@ -162,35 +162,16 @@ namespace PeterDB {
         v.push_back({"column-length", TypeInt, 4});
         v.push_back({"column-position", TypeInt, 4});
 
-//        Attribute attr;
-//        attr.name = "table-id";
-//        attr.length = 4;
-//        attr.type = TypeInt;
-//        v.push_back(attr);
-//
-//        attr.name = "column-name";
-//        attr.length = 50;
-//        attr.type = TypeVarChar;
-//        v.push_back(attr);
-//
-//        attr.name = "column-type";
-//        attr.length = 4;
-//        attr.type = TypeInt;
-//        v.push_back(attr);
-//
-//        attr.name = "column-length";
-//        attr.length = 4;
-//        attr.type = TypeInt;
-//        v.push_back(attr);
-//
-//        attr.name = "column-position";
-//        attr.length = 4;
-//        attr.type = TypeInt;
-//        v.push_back(attr);
-
         return v;
     }
 
+    std::vector<Attribute> RelationManager::getIndexAttribute(){
+        std::vector<Attribute> v;
+        v.push_back({"table-id", TypeInt, 4});
+        v.push_back({"attribute-name", TypeVarChar, 50});
+        v.push_back({"file-name", TypeVarChar, 50});
+        return v;
+    }
     /*
      * The columns are: table-id:int, table-name:varchar(50), file-name:varchar(50), system:int
      * table-name and file-name are same
@@ -263,6 +244,44 @@ namespace PeterDB {
         return 0;
     }
 
+    RC RelationManager::createDataForIndex_table(int table_id, std::string attributeName, std::string index_filename, void* &data){
+
+        unsigned char bitmap = 0; // corresponds to 00000000 bitmap
+        int attributeName_len = attributeName.length();
+        int index_filename_len = index_filename.length();
+        int total_size = sizeof (bitmap) + sizeof (table_id) + 2*sizeof (unsigned ) + attributeName_len + index_filename_len;
+        const char* attributeName_cstr = attributeName.c_str();
+        const char* index_filename_cstr = index_filename.c_str();
+
+        data  = malloc(total_size);
+        memset(data, 0, total_size);
+
+        int offset = 0;
+
+        memcpy((char*)data + offset, &bitmap, sizeof (char));
+        offset += sizeof (char);
+
+        //Store table_id
+        memcpy((char*)data + offset, &table_id, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+
+        //Store varchar length in next 4 byte
+        memcpy((char*)data + offset, &attributeName_len, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+
+        //Store attributeName in next 'attributeName_len' bytes
+        memcpy((char*)data + offset, attributeName_cstr, attributeName_len);
+        offset += attributeName_len;
+
+        //Store varchar length in next 4 byte
+        memcpy((char*)data + offset, &index_filename_len, sizeof (unsigned ));
+        offset += sizeof (unsigned );
+
+        memcpy((char*)data + offset, index_filename_cstr, index_filename_len);
+
+        return 0;
+    }
+    //Here other than deleting the Indexes file, we also have to delete all the filename-attribute files that were created for every index.
     RC RelationManager::deleteCatalog() {
 
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
@@ -352,7 +371,8 @@ namespace PeterDB {
         }
         return false;
     }
-
+    /*
+     * When deleting table, all the corresponding index files should be deleted*/
     RC RelationManager::deleteTable(const std::string &tableName) {
 
         if(!this->catalog_exists) return -1;
@@ -436,7 +456,33 @@ namespace PeterDB {
             return -1;
         }
         rbfm_ScanIterator.close();
+        if(deleteAllCorrespondingIndexFiles(tableName, table_id)) return -1;
 
+        return 0;
+    }
+    RC RelationManager::deleteAllCorrespondingIndexFiles(const std::string &tableName, int table_id){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        IndexManager& ix = IndexManager::instance();
+        RBFM_ScanIterator rbfm_ScanIterator;
+
+        //Get the attribute names for which index files are there from the 'Indexes' table and then delete one by one
+        const std::vector<std::string> attributeNames_table = {"attribute-name"};
+
+        if(rbfm.scan(this->index_handle, getIndexAttribute(), "table-id", EQ_OP, &table_id, attributeNames_table, rbfm_ScanIterator));
+        RID rid;
+        void* data = nullptr;
+        while(rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
+            int len = *(int*)((char*)data + sizeof (char));
+            char attribute_name[len + 1];
+            attribute_name[len] = '\0';
+            memcpy(&attribute_name, (char*)data + sizeof (char) + sizeof (unsigned ), len);
+            std::string index_filename = tableName + "-" + attribute_name + ".idx";
+            //destroy the index file
+            //remove this record from 'Indexes' table
+            if(ix.destroyFile(index_filename)) return -1;
+            if(rbfm.deleteRecord(this->index_handle, getIndexAttribute(), rid)) return -1;
+            free(data);
+        }
         return 0;
     }
     RC RelationManager::prepare_value_for_varchar(const std::string &str, void* &value){
@@ -518,7 +564,11 @@ namespace PeterDB {
         if(rbfm.openFile(tableName, curr_file_handle) != 0) return -1;
         std::vector<Attribute> recordDescriptor;
         getAttributes(tableName, recordDescriptor);
+        /*
+         * Get the After getting the attributes, get the table-id, and create <attribute-name, filename> pair*/
         if(rbfm.insertRecord(curr_file_handle, recordDescriptor, data, rid)) return -1;
+        /*
+         * For each attribute, create key*. Insert key*, rid in the corresponding index file*/
         if(rbfm.closeFile(curr_file_handle)) return -1;
         return 0;
     }
@@ -532,7 +582,11 @@ namespace PeterDB {
 
         std::vector<Attribute> recordDescriptor;
         if(getAttributes(tableName, recordDescriptor)) return -1;
+        /*
+         * Get the After getting the attributes, get the table-id, and create <attribute-name, filename> pair*/
         if(rbfm.deleteRecord(curr_file_handle, recordDescriptor, rid)) return -1;
+        /*
+         * For each attribute, create key*. Delete key*, rid in the corresponding index file*/
         if(rbfm.closeFile(curr_file_handle)) return -1;
 
         return 0;
@@ -547,7 +601,13 @@ namespace PeterDB {
 
         std::vector<Attribute> recordDescriptor;
         getAttributes(tableName, recordDescriptor);
+        /*
+         * Get the After getting the attributes, get the table-id, and create <attribute-name, filename> pair
+         * Get the current data from given rid
+         * Prepare keys from current data and delete the entries in index file*/
         if(rbfm.updateRecord(curr_file_handle, recordDescriptor, data, rid)) return -1;
+        /*
+         * Create keys from the updated data and insert key,rid pair in the index files*/
         if(rbfm.closeFile(curr_file_handle)) return -1;
         return 0;
     }
@@ -733,11 +793,118 @@ namespace PeterDB {
 
     // QE IX related
     RC RelationManager::createIndex(const std::string &tableName, const std::string &attributeName){
-        return -1;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        IndexManager& ix = IndexManager::instance();
+        std::string index_filename = tableName + "-" + attributeName + ".idx";
+        if(rbfm.createFile(index_filename) != 0) return -1;
+
+        //Get table-id for this tableName
+        RBFM_ScanIterator rbfm_ScanIterator;
+        const std::vector<std::string> attributeNames_table = {"table-id"};
+        void* value = nullptr;
+        prepare_value_for_varchar(tableName, value);
+        if(rbfm.scan(table_handle, getTableAttribute(), "table-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator)) return -1;
+
+        RID rid;
+        void* data = nullptr;
+
+        if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF) return -1;
+
+        //In this data, there will be 1 byte bitmap followed by 4 bytes containing the 'table-id'(int)
+        int table_id = *(int*)((char*)data + sizeof (char));
+        //Found the table-id
+        rbfm_ScanIterator.close();
+        free(value);
+        free(data);
+
+        void* data_index = nullptr;
+        createDataForIndex_table(table_id, attributeName, index_filename, data_index);
+
+        if(rbfm.insertRecord(this->index_handle, getIndexAttribute(), data_index, rid)) return -1;
+
+        //Insert all the entries for tuple in 'tableName'
+        FileHandle curr_file_handle;
+        if(rbfm.openFile(tableName, curr_file_handle)) return -1;
+        std::vector<Attribute> recordDescriptor;
+        if(getAttributes(tableName, recordDescriptor)){
+            if(rbfm.closeFile(curr_file_handle)) return -1;
+            return -1;
+        }
+        // We need to extract <key, rid> pair
+        const std::vector<std::string> attributeNames = {attributeName};
+        Attribute attribute;
+        for(Attribute attr: recordDescriptor){
+            if(strcmp(attr.name.c_str(), attributeName.c_str()) == 0){
+                attribute = attr;
+                break;
+            }
+        }
+        if(rbfm.scan(curr_file_handle, recordDescriptor, "", NO_OP, nullptr, attributeNames, rbfm_ScanIterator))return -1;
+
+
+        data = nullptr;
+        IXFileHandle index_filename_handle;
+        if(ix.openFile(index_filename, index_filename_handle)) return -1;
+        while(rbfm_ScanIterator.getNextRecord(rid, data) != RBFM_EOF){
+            //In this data, there will be 1 byte bitmap followed by key
+            void* key = nullptr;
+            if(attribute.type == TypeInt){
+                key = malloc(sizeof (unsigned ));
+                memcpy(key, (char*)data + sizeof (char ), sizeof (unsigned ));
+            }else if(attribute.type = TypeReal){
+                key = malloc(sizeof (float ));
+                memcpy(key, (char*)data + sizeof (char ), sizeof (float ));
+            }else{
+                int len = *(int*)((char*)data + sizeof (char ));
+                key = malloc(sizeof (unsigned ) + len);
+                memcpy(key, (char*)data + sizeof (char), sizeof (unsigned ) + len);
+            }
+            ix.insertEntry(index_filename_handle, attribute, key, rid);
+            free(key);
+        }
+        return 0;
     }
 
     RC RelationManager::destroyIndex(const std::string &tableName, const std::string &attributeName){
-        return -1;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        std::string index_filename = tableName + "-" + attributeName + ".idx";
+        if(!fileExists(index_filename)) return -1;
+        RBFM_ScanIterator rbfm_ScanIterator;
+        const std::vector<std::string> attributeNames_table = {"table-id"};
+        void* value = nullptr;
+        prepare_value_for_varchar(attributeName, value);
+        if(rbfm.scan(this->index_handle, getIndexAttribute(), "attribute-name", EQ_OP, value, attributeNames_table, rbfm_ScanIterator)){
+            if(value != nullptr){
+                free(value);
+            }
+            return -1;
+        }
+        RID rid;
+        void* data = nullptr;
+        if(rbfm_ScanIterator.getNextRecord(rid, data) == RBFM_EOF){
+            if(value != nullptr){
+                free(value);
+            }
+            if(data != nullptr){
+                free(data);
+            }
+            rbfm_ScanIterator.close();
+            return -1;
+        }
+        free(data);
+        //We just needed the rid, to delete this record from "Indexes"
+        if(rbfm.deleteRecord(this->index_handle, getIndexAttribute(), rid)){
+            if(value != nullptr){
+                free(value);
+                rbfm_ScanIterator.close();
+                return -1;
+            }
+        }
+        rbfm_ScanIterator.close();
+        free(value);
+        //delete the file itself
+        if(rbfm.destroyFile(index_filename)) return -1;
+        return 0;
     }
 
     // indexScan returns an iterator to allow the caller to go through qualified entries in index

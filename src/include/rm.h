@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "src/include/rbfm.h"
+#include "src/include/ix.h"
 
 namespace PeterDB {
 #define RM_EOF (-1)  // end of a scan operator
@@ -117,8 +118,11 @@ namespace PeterDB {
         RC createDataForColumns_table(int table_id, std::string column_name, int column_type, int column_length, int column_position, void* &data);
         std::vector<Attribute> getTableAttribute();
         std::vector<Attribute> getColumnAttribute();
+        std::vector<Attribute> getIndexAttribute();
         RC prepare_value_for_varchar(const std::string &str, void* &value);
         bool isSystemTable(const std::string &tableName);
+        RC createDataForIndex_table(int table_id, std::string attributeName, std::string index_filename, void* &data);
+        RC deleteAllCorrespondingIndexFiles(const std::string &tableName, int table_id);
     protected:
         RelationManager();                                                  // Prevent construction
         ~RelationManager();                                                 // Prevent unwanted destruction
