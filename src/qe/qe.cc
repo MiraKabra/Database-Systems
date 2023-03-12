@@ -1,5 +1,5 @@
 #include "src/include/qe.h"
-
+#include <cstring>
 namespace PeterDB {
     Filter::Filter(Iterator *input, const Condition &condition) {
         this->itr = input;
