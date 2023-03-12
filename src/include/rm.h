@@ -139,6 +139,8 @@ namespace PeterDB {
         bool isSystemTable(const std::string &tableName);
         RC createDataForIndex_table(int table_id, std::string attributeName, std::string index_filename, void* &data);
         RC deleteAllCorrespondingIndexFiles(const std::string &tableName, int table_id);
+        RC insert_in_all_index_trees(const std::string &tableName, void *data, const RID &rid, std::vector<Attribute> recordDescriptor);
+        RC delete_in_all_index_trees(const std::string &tableName, void *data, const RID &rid, std::vector<Attribute> recordDescriptor);
     protected:
         RelationManager();                                                  // Prevent construction
         ~RelationManager();                                                 // Prevent unwanted destruction

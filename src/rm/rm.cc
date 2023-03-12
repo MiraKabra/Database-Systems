@@ -573,8 +573,43 @@ namespace PeterDB {
         if(rbfm.insertRecord(curr_file_handle, recordDescriptor, data, rid)) return -1;
         /*
          * For each attribute, create key*. Insert key*, rid in the corresponding index file*/
+        insert_in_all_index_trees(tableName, const_cast<void *>(data), rid, recordDescriptor);
         if(rbfm.closeFile(curr_file_handle)) return -1;
         return 0;
+    }
+
+    RC RelationManager::insert_in_all_index_trees(const std::string &tableName, void *data, const RID &rid, std::vector<Attribute> recordDescriptor){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        IndexManager& ix = IndexManager::instance();
+        for(Attribute attribute: recordDescriptor){
+            std::string index_filename = tableName + "-" + attribute.name + ".idx";
+            if(!fileExists(index_filename)){
+                continue;
+            }
+
+            IXFileHandle index_filename_handle;
+            if(ix.openFile(index_filename, index_filename_handle)) return -1;
+
+            void* read_attr = nullptr;
+            FileHandle dummy_fileHandle;
+            RID dummy_rid;
+            rbfm.readAttributeFromRecord(dummy_fileHandle, recordDescriptor, dummy_rid, attribute.name, read_attr, data);
+            //Assuming there will never be null key
+            void* key = nullptr;
+            if(attribute.type == TypeInt){
+                key = malloc(sizeof (unsigned ));
+                memcpy(key, (char*)read_attr + sizeof (char ), sizeof (unsigned ));
+            }else if(attribute.type = TypeReal){
+                key = malloc(sizeof (float ));
+                memcpy(key, (char*)read_attr + sizeof (char ), sizeof (float ));
+            }else{
+                int len = *(int*)((char*)read_attr + sizeof (char ));
+                key = malloc(sizeof (unsigned ) + len);
+                memcpy(key, (char*)read_attr + sizeof (char), sizeof (unsigned ) + len);
+            }
+            if(ix.insertEntry(index_filename_handle, attribute, key, rid)) return -1;
+            if(ix.closeFile(index_filename_handle)) return -1;
+        }
     }
 
     RC RelationManager::deleteTuple(const std::string &tableName, const RID &rid) {
@@ -586,6 +621,10 @@ namespace PeterDB {
 
         std::vector<Attribute> recordDescriptor;
         if(getAttributes(tableName, recordDescriptor)) return -1;
+        //read record before deleting for index tree key extraction
+        void* data = nullptr;
+        if(rbfm.readRecord(curr_file_handle, recordDescriptor, rid, data)) return -1;
+        delete_in_all_index_trees(tableName, data, rid, recordDescriptor);
         /*
          * Get the After getting the attributes, get the table-id, and create <attribute-name, filename> pair*/
         if(rbfm.deleteRecord(curr_file_handle, recordDescriptor, rid)) return -1;
@@ -594,6 +633,41 @@ namespace PeterDB {
         if(rbfm.closeFile(curr_file_handle)) return -1;
 
         return 0;
+    }
+
+    RC RelationManager::delete_in_all_index_trees(const std::string &tableName, void *data, const RID &rid, std::vector<Attribute> recordDescriptor){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        IndexManager& ix = IndexManager::instance();
+        for(Attribute attribute: recordDescriptor){
+            std::string index_filename = tableName + "-" + attribute.name + ".idx";
+            if(!fileExists(index_filename)){
+                continue;
+            }
+
+            IXFileHandle index_filename_handle;
+            if(ix.openFile(index_filename, index_filename_handle)) return -1;
+
+            void* read_attr = nullptr;
+            FileHandle dummy_fileHandle;
+            RID dummy_rid;
+            rbfm.readAttributeFromRecord(dummy_fileHandle, recordDescriptor, dummy_rid, attribute.name, read_attr, data);
+            //Assuming there will never be null key
+            void* key = nullptr;
+            if(attribute.type == TypeInt){
+                key = malloc(sizeof (unsigned ));
+                memcpy(key, (char*)read_attr + sizeof (char ), sizeof (unsigned ));
+            }else if(attribute.type = TypeReal){
+                key = malloc(sizeof (float ));
+                memcpy(key, (char*)read_attr + sizeof (char ), sizeof (float ));
+            }else{
+                int len = *(int*)((char*)read_attr + sizeof (char ));
+                key = malloc(sizeof (unsigned ) + len);
+                memcpy(key, (char*)read_attr + sizeof (char), sizeof (unsigned ) + len);
+            }
+            if(ix.deleteEntry(index_filename_handle, attribute, key, rid))return -1;
+
+            if(ix.closeFile(index_filename_handle)) return -1;
+        }
     }
 
     RC RelationManager::updateTuple(const std::string &tableName, const void *data, const RID &rid) {
@@ -609,9 +683,16 @@ namespace PeterDB {
          * Get the After getting the attributes, get the table-id, and create <attribute-name, filename> pair
          * Get the current data from given rid
          * Prepare keys from current data and delete the entries in index file*/
+
+        //delete old <key,rid> from index files
+        void* old_data = nullptr;
+        if(rbfm.readRecord(curr_file_handle, recordDescriptor, rid, old_data)) return -1;
+        delete_in_all_index_trees(tableName, old_data, rid, recordDescriptor);
+
         if(rbfm.updateRecord(curr_file_handle, recordDescriptor, data, rid)) return -1;
         /*
          * Create keys from the updated data and insert key,rid pair in the index files*/
+        insert_in_all_index_trees(tableName, const_cast<void *>(data), rid, recordDescriptor);
         if(rbfm.closeFile(curr_file_handle)) return -1;
         return 0;
     }
@@ -866,12 +947,16 @@ namespace PeterDB {
             ix.insertEntry(index_filename_handle, attribute, key, rid);
             free(key);
         }
+
 //        std::stringstream stream;
 //        ix.printBTree(index_filename_handle, attribute, stream);
 //        nlohmann::ordered_json j;
 //        stream >> j;
 //        LOG(INFO) << j.dump(2);
+
+        if(ix.closeFile(index_filename_handle)) return -1;
         return 0;
+
     }
 
     RC RelationManager::destroyIndex(const std::string &tableName, const std::string &attributeName){
