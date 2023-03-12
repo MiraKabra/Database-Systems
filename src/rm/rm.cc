@@ -1,8 +1,11 @@
 #include "src/include/rm.h"
 #include <cstring>
 #include <cmath>
+#include <sstream>
 #include <iostream>
 #include <sys/stat.h>
+#include "glog/logging.h"
+#include "test/utils/json.hpp"
 
 namespace PeterDB {
     int RelationManager::tableCount;
@@ -863,6 +866,11 @@ namespace PeterDB {
             ix.insertEntry(index_filename_handle, attribute, key, rid);
             free(key);
         }
+//        std::stringstream stream;
+//        ix.printBTree(index_filename_handle, attribute, stream);
+//        nlohmann::ordered_json j;
+//        stream >> j;
+//        LOG(INFO) << j.dump(2);
         return 0;
     }
 
@@ -917,10 +925,21 @@ namespace PeterDB {
                  bool highKeyInclusive,
                  RM_IndexScanIterator &rm_IndexScanIterator){
         IndexManager& ix = IndexManager::instance();
-        IXFileHandle curr_ix_file_handle;
+        //FileHandle *indexFileHandle = new FileHandle;
+        IXFileHandle* curr_ix_file_handle = new IXFileHandle;
+        //IXFileHandle* curr_ix_file_handle = nullptr;
+
         Attribute attribute = get_attribute_from_name(tableName, attributeName);
-        if(ix.openFile(tableName, curr_ix_file_handle)) return -1;
-        rm_IndexScanIterator.setScanner(curr_ix_file_handle, attribute, lowKey, highKey, lowKeyInclusive, highKeyInclusive);
+        std::string index_filename = tableName + "-" + attributeName + ".idx";
+        if(ix.openFile(index_filename, *curr_ix_file_handle)) return -1;
+        rm_IndexScanIterator.setScanner(*curr_ix_file_handle, attribute, lowKey, highKey, lowKeyInclusive, highKeyInclusive);
+
+//        std::stringstream stream;
+//        ix.printBTree(*curr_ix_file_handle, attribute, stream);
+//        nlohmann::ordered_json j;
+//        stream >> j;
+//        LOG(INFO) << j.dump(2);
+
         return 0;
     }
 
