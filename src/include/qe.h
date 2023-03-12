@@ -7,6 +7,7 @@
 
 #include "rm.h"
 #include "ix.h"
+#include "rbfm.h"
 
 namespace PeterDB {
 
@@ -169,6 +170,11 @@ namespace PeterDB {
 
         // For attribute in std::vector<Attribute>, name it as rel.attr
         RC getAttributes(std::vector<Attribute> &attrs) const override;
+        bool is_record_satisfiable(void* data, Condition& cond);
+    private:
+        Iterator* itr;
+        Condition cond;
+        std::vector<Attribute> attributes;
     };
 
     class Project : public Iterator {

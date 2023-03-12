@@ -482,6 +482,7 @@ namespace PeterDB {
             if(ix.destroyFile(index_filename)) return -1;
             if(rbfm.deleteRecord(this->index_handle, getIndexAttribute(), rid)) return -1;
             free(data);
+            data = nullptr;
         }
         return 0;
     }
