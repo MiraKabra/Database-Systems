@@ -189,6 +189,14 @@ namespace PeterDB {
 
         // For attribute in std::vector<Attribute>, name it as rel.attr
         RC getAttributes(std::vector<Attribute> &attrs) const override;
+        RC create_data_with_required_attributes(void* &total_data, void* &data);
+        RC set_bitmap(void* &total_data, void* &bitmap);
+        AttrType get_attribute_type(std::string attributeName);
+    private:
+        Iterator* itr;
+        Condition cond;
+        std::vector<Attribute> record_descriptor;
+        std::vector<std::string> relative_attrNames;
     };
 
     class BNLJoin : public Iterator {

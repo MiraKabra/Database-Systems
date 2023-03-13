@@ -1,6 +1,8 @@
 #include "src/include/qe.h"
 #include <cstring>
 #include <algorithm>
+#include <cmath>
+#include <bitset>
 namespace PeterDB {
     Filter::Filter(Iterator *input, const Condition &condition) {
         this->itr = input;
@@ -99,7 +101,9 @@ namespace PeterDB {
     }
 
     Project::Project(Iterator *input, const std::vector<std::string> &attrNames) {
-
+        this->itr = input;
+        input->getAttributes(this->record_descriptor);
+        this->relative_attrNames = attrNames;
     }
 
     Project::~Project() {
@@ -107,11 +111,126 @@ namespace PeterDB {
     }
 
     RC Project::getNextTuple(void *data) {
-        return -1;
+        while(true){
+            void* total_data = malloc(PAGE_SIZE);
+            memset(total_data, 0, PAGE_SIZE);
+            if(itr->getNextTuple(total_data)){
+                free(total_data);
+                return -1;
+            }
+            create_data_with_required_attributes(total_data, data);
+            free(total_data);
+            return 0;
+        }
     }
 
     RC Project::getAttributes(std::vector<Attribute> &attrs) const {
-        return -1;
+        if(attrs.size() != 0){
+            attrs.clear();
+        }
+        for(std::string attr : this->relative_attrNames){
+            for(int j = 0; j < this->record_descriptor.size(); j++){
+                if(record_descriptor.at(j).name == attr){
+                    attrs.push_back(record_descriptor.at(j));
+                    break;
+                }
+            }
+        }
+        return 0;
+    }
+
+    RC Project::create_data_with_required_attributes(void* &total_data, void* &data){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        auto numberOfCols = relative_attrNames.size();
+        int bitMapSize = ceil((float)numberOfCols/8);
+        void* bitmap = nullptr;
+
+        set_bitmap(total_data, bitmap);
+
+        int offset = 0;
+        //copy bitmap
+        memcpy((char*)data + offset, bitmap, bitMapSize);
+        free(bitmap);
+        offset += bitMapSize;
+
+        for(int k = 0; k < relative_attrNames.size(); k++){
+            std::string attributeName = relative_attrNames.at(k);
+            AttrType type = get_attribute_type(attributeName);
+            void* read_attr = nullptr;
+            FileHandle dummy_fileHandle;
+            RID dummy_rid;
+            int rc = rbfm.readAttributeFromRecord(dummy_fileHandle, record_descriptor, dummy_rid, attributeName,read_attr, total_data);
+
+            char* attr_data = (char*)read_attr + sizeof (char);
+            if(*(unsigned char*)(read_attr) == 128u){
+                free(read_attr);
+                continue;
+            }
+            if (type == TypeInt || type == TypeReal){
+                memcpy((char*)data + offset, attr_data, sizeof (unsigned ));
+                offset += sizeof (unsigned );
+            } else {
+                int len = *(int*)(attr_data);
+                memcpy((char*)data + offset, attr_data, sizeof (unsigned ) + len);
+                offset += sizeof (unsigned ) + len;
+            }
+            free(read_attr);
+        }
+        return 0;
+    }
+
+    RC Project::set_bitmap(void* &total_data, void* &bitmap){
+
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int totalSize = 0;
+        auto numberOfCols = this->relative_attrNames.size();
+        const int bitMapSize = ceil((float)numberOfCols/8);
+        totalSize += bitMapSize;
+
+        std::vector<std::bitset<8>> bitMap(bitMapSize);
+        if (bitmap == nullptr) {
+            bitmap = malloc(bitMapSize * sizeof(char));
+        }
+        memset(bitmap, 0, bitMapSize*sizeof (char));
+
+        for(int i = 0; i < relative_attrNames.size(); i++){
+            std::string attributeName = relative_attrNames.at(i);
+            AttrType type = get_attribute_type(attributeName);
+            void* read_attr = nullptr;
+            FileHandle dummy_fileHandle;
+            RID dummy_rid;
+            rbfm.readAttributeFromRecord(dummy_fileHandle, record_descriptor, dummy_rid, attributeName,
+                                                  read_attr, total_data);
+            if(*(unsigned char*)(read_attr) == 128u){
+                bitMap[i/8].set(8 - i%8 - 1);
+                free(read_attr);
+                continue;
+            }
+            if(type == TypeInt || type == TypeReal){
+                totalSize += sizeof (unsigned );
+            } else {
+                int len = *(int*)((char*)read_attr + sizeof (char ));
+                totalSize += sizeof (unsigned ) + len;
+            }
+            free(read_attr);
+        }
+
+        memset(bitmap, 0, bitMapSize*sizeof (char));
+        for(int i = 0; i < bitMapSize; i++) {
+            char* pointer = (char*)&bitMap[i];
+            memcpy((char*)bitmap + i, pointer, sizeof (char));
+        }
+        return totalSize;
+    }
+
+    AttrType Project::get_attribute_type(std::string attributeName){
+
+        for(int k = 0; k < record_descriptor.size(); k++){
+            Attribute attr = record_descriptor.at(k);
+            if(attr.name == attributeName) return attr.type;
+        }
+        //random return just because we should return an Attrtype
+        return TypeInt;
     }
 
     BNLJoin::BNLJoin(Iterator *leftIn, TableScan *rightIn, const Condition &condition, const unsigned int numPages) {
