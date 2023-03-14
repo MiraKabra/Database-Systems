@@ -237,6 +237,7 @@ namespace PeterDB {
     BNLJoin::BNLJoin(Iterator *leftIn, TableScan *rightIn, const Condition &condition, const unsigned int numPages) {
         this->bnl_leftIn = leftIn;
         this->bnl_rightIn = rightIn;
+        this->bnl_righIn_initial = rightIn;
         this->bnl_condition = condition;
         this->bnl_numPages = numPages;
         this->start = true;
@@ -297,18 +298,95 @@ namespace PeterDB {
         if(this->join_keyType == TypeInt){
             if(start){
                 start = false;
-                std::unordered_map<int, std::vector<void*>> left_map;
-                std::unordered_map<int, std::vector<void*>> right_map;
-                loadTuplesLeftTable_TypeInt(left_map);
-                loadTuplesRightTable_TypeInt(right_map);
-                joinTwoTables_TypeInt(left_map, right_map, this->output);
+                loadTuplesLeftTable_TypeInt(this->left_map_int);
+                loadTuplesRightTable_TypeInt(this->right_map_int);
+                joinTwoTables_TypeInt(this->left_map_int, this->right_map_int, this->output);
             }
             curr_output_index++;
             //all exhausted, load again
+            if(curr_output_index == output.size()){
+                if(!finished_scan_right_table){
 
+                    //free data in right map
+                    for(auto const &right_pair: right_map_int){
+                        for(void* right_data: right_pair.second){
+                            free(right_data);
+                        }
+                    }
+                    right_map_int.clear();
+
+                    //free data in output
+                    for(void* data: output){
+                        free(data);
+                    }
+                    output.clear();
+
+                    loadTuplesRightTable_TypeInt(this->right_map_int);
+                    joinTwoTables_TypeInt(this->left_map_int, this->right_map_int, this->output);
+                    curr_output_index = 0;
+                }else if(!finished_scan_left_table){
+
+                    //free data in left map
+                    for(auto const &left_pair: left_map_int){
+                        for(void* left_data: left_pair.second){
+                            free(left_data);
+                        }
+                    }
+                    left_map_int.clear();
+
+                    //free data in right map
+                    for(auto const &right_pair: right_map_int){
+                        for(void* right_data: right_pair.second){
+                            free(right_data);
+                        }
+                    }
+                    right_map_int.clear();
+
+                    //free data in output
+                    for(void* data: output){
+                        free(data);
+                    }
+                    output.clear();
+
+                    loadTuplesLeftTable_TypeInt(this->left_map_int);
+                    //set iterator of right table to initial position again
+                    this->bnl_rightIn = this->bnl_righIn_initial;
+                    loadTuplesRightTable_TypeInt(this->right_map_int);
+                    joinTwoTables_TypeInt(this->left_map_int, this->right_map_int, this->output);
+                    curr_output_index = 0;
+                }else{
+                    //Both left and right scan are complete
+                    //free data in left map
+                    for(auto const &left_pair: left_map_int){
+                        for(void* left_data: left_pair.second){
+                            free(left_data);
+                        }
+                    }
+                    left_map_int.clear();
+
+                    //free data in right map
+                    for(auto const &right_pair: right_map_int){
+                        for(void* right_data: right_pair.second){
+                            free(right_data);
+                        }
+                    }
+                    right_map_int.clear();
+
+                    //free data in output
+                    for(void* data: output){
+                        free(data);
+                    }
+                    output.clear();
+
+                    return -1;
+                }
+            }
+            data = output.at(curr_output_index);
+            curr_output_index++;
         }
         return 0;
     }
+
 
     RC BNLJoin::joinTwoTables_TypeInt(std::unordered_map<int, std::vector<void*>> &left_map, std::unordered_map<int, std::vector<void*>> &right_map, std::vector<void*> &output){
         for(auto const &left_pair: left_map){

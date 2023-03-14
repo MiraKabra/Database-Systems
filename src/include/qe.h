@@ -224,6 +224,7 @@ namespace PeterDB {
     private:
         Iterator *bnl_leftIn = nullptr;
         TableScan *bnl_rightIn = nullptr;
+        TableScan *bnl_righIn_initial = nullptr;
         Condition bnl_condition;
         unsigned bnl_numPages = 0;
         std::vector<Attribute> leftIn_attrs;
@@ -231,6 +232,10 @@ namespace PeterDB {
         std::vector<Attribute> joined_attrs;
         AttrType join_keyType;
         bool start = true;
+
+        std::unordered_map<int, std::vector<void*>> left_map_int;
+        std::unordered_map<int, std::vector<void*>> right_map_int;
+
         std::vector<void*> output;
         int curr_output_index = -1;
         bool finished_scan_left_table = false;
