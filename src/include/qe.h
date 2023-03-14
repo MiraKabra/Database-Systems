@@ -219,7 +219,7 @@ namespace PeterDB {
         RC loadTuplesRightTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map);
         int getSizeOfData(void* &data, std::vector<Attribute> &recordDescriptor);
         RC joinTwoTables_TypeInt(std::unordered_map<int, std::vector<void*>> &left_map, std::unordered_map<int, std::vector<void*>> &right_map, std::vector<void*> &output);
-        RC joinTwoData(void* &left_data, void* &right_data, void* & output_data);
+        RC joinTwoData(void* &leftData, void* &rightData, void* & outputData);
         RC createOutPutBitMap(void* &output_bitMap, void* &left_data, void* &right_data, int &output_bitMapSize);
     private:
         Iterator *bnl_leftIn = nullptr;

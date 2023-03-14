@@ -295,8 +295,8 @@ namespace PeterDB {
 
     RC BNLJoin::getNextTuple(void *data) {
 
-        if(this->join_keyType == TypeInt){
-            if(start){
+        if(this->join_keyType == TypeInt) {
+            if(start) {
                 start = false;
                 loadTuplesLeftTable_TypeInt(this->left_map_int);
                 loadTuplesRightTable_TypeInt(this->right_map_int);
@@ -308,16 +308,16 @@ namespace PeterDB {
                 if(!finished_scan_right_table){
 
                     //free data in right map
-                    for(auto const &right_pair: right_map_int){
-                        for(void* right_data: right_pair.second){
-                            free(right_data);
+                    for(auto const &rightPair: right_map_int){
+                        for(void* rightData: rightPair.second){
+                            free(rightData);
                         }
                     }
                     right_map_int.clear();
 
                     //free data in output
-                    for(void* data: output){
-                        free(data);
+                    for(void* d: output){
+                        free(d);
                     }
                     output.clear();
 
@@ -327,24 +327,24 @@ namespace PeterDB {
                 }else if(!finished_scan_left_table){
 
                     //free data in left map
-                    for(auto const &left_pair: left_map_int){
-                        for(void* left_data: left_pair.second){
-                            free(left_data);
+                    for(auto const &leftPair: left_map_int){
+                        for(void* leftData: leftPair.second){
+                            free(leftData);
                         }
                     }
                     left_map_int.clear();
 
                     //free data in right map
-                    for(auto const &right_pair: right_map_int){
-                        for(void* right_data: right_pair.second){
-                            free(right_data);
+                    for(auto const &rightPair: right_map_int){
+                        for(void* rightData: rightPair.second){
+                            free(rightData);
                         }
                     }
                     right_map_int.clear();
 
                     //free data in output
-                    for(void* data: output){
-                        free(data);
+                    for(void* d: output){
+                        free(d);
                     }
                     output.clear();
 
@@ -359,31 +359,32 @@ namespace PeterDB {
                 }else{
                     //Both left and right scan are complete
                     //free data in left map
-                    for(auto const &left_pair: left_map_int){
-                        for(void* left_data: left_pair.second){
-                            free(left_data);
+                    for(auto const &leftPair: left_map_int){
+                        for(void* leftData: leftPair.second){
+                            free(leftData);
                         }
                     }
                     left_map_int.clear();
 
                     //free data in right map
-                    for(auto const &right_pair: right_map_int){
-                        for(void* right_data: right_pair.second){
-                            free(right_data);
+                    for(auto const &rightPair: right_map_int){
+                        for(void* rightData: rightPair.second){
+                            free(rightData);
                         }
                     }
                     right_map_int.clear();
 
                     //free data in output
-                    for(void* data: output){
-                        free(data);
+                    for(void* d: output){
+                        free(d);
                     }
                     output.clear();
 
                     return -1;
                 }
             }
-            data = output.at(curr_output_index);
+            int data_size = getSizeOfData(output.at(curr_output_index), this->joined_attrs);
+            memcpy(data, output.at(curr_output_index), data_size);
         }
         return 0;
     }
@@ -392,14 +393,25 @@ namespace PeterDB {
     RC BNLJoin::joinTwoTables_TypeInt(std::unordered_map<int, std::vector<void*>> &left_map, std::unordered_map<int, std::vector<void*>> &right_map, std::vector<void*> &output){
         for(auto const &left_pair: left_map){
             int left_key = left_pair.first;
-            for(auto const &right_pair: right_map){
-                int right_key = right_pair.first;
-                if(left_key == right_key){
-                    for(void* left_data : left_pair.second){
-                        for(void* right_data: right_pair.second){
-                            void* output_data = nullptr;
-                            joinTwoData(left_data, right_data, output_data);
-                            output.push_back(output_data);
+            if(right_map.find(left_key) != right_map.end()){
+                for(void* left_data : left_pair.second){
+                    for(void* right_data: right_map[left_key]){
+                        void* output_data = nullptr;
+                        joinTwoData(left_data, right_data, output_data);
+                        output.push_back(output_data);
+                    }
+                }
+            }
+            if(false) {
+                for (auto const &right_pair: right_map) {
+                    int right_key = right_pair.first;
+                    if (left_key == right_key) {
+                        for (void *left_data: left_pair.second) {
+                            for (void *right_data: right_pair.second) {
+                                void *output_data = nullptr;
+                                joinTwoData(left_data, right_data, output_data);
+                                output.push_back(output_data);
+                            }
                         }
                     }
                 }
@@ -407,39 +419,39 @@ namespace PeterDB {
         }
     }
 
-    RC BNLJoin::joinTwoData(void* &left_data, void* &right_data, void* & output_data){
+    RC BNLJoin::joinTwoData(void* &leftData, void* &rightData, void* & outputData){
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
-        int left_data_size = getSizeOfData(left_data, this->leftIn_attrs);
-        int right_data_size = getSizeOfData(right_data, this->rightIn_attrs);
+        int leftDataSize = getSizeOfData(leftData, this->leftIn_attrs);
+        int rightDataSize = getSizeOfData(rightData, this->rightIn_attrs);
 
-        int left_numberOfCols = this->leftIn_attrs.size();
-        int right_numberOfCols = this->rightIn_attrs.size();
-        int output_numberOfCols = this->joined_attrs.size();
+        int leftNumberOfCols = this->leftIn_attrs.size();
+        int rightNumberOfCols = this->rightIn_attrs.size();
+        int outputNumberOfCols = this->joined_attrs.size();
 
-        int left_bitMapSize = ceil((float)left_numberOfCols/8);
-        int right_bitMapSize = ceil((float)right_numberOfCols/8);
-        int output_bitMapSize = ceil((float)output_numberOfCols/8);
+        int leftBitMapSize = ceil((float)leftNumberOfCols / 8);
+        int rightBitMapSize = ceil((float)rightNumberOfCols / 8);
+        int outputBitMapSize = ceil((float)outputNumberOfCols / 8);
 
-        int output_data_size = left_data_size + right_data_size - left_bitMapSize - right_bitMapSize + output_bitMapSize;
+        int outputDataSize = leftDataSize + rightDataSize - leftBitMapSize - rightBitMapSize + outputBitMapSize;
 
-        output_data = malloc(output_data_size);
-        memset(output_data, 0, output_data_size);
-        void* output_bitMap = malloc(output_bitMapSize*sizeof (char));
+        outputData = malloc(outputDataSize);
+        memset(outputData, 0, outputDataSize);
+        void* outputBitMap = malloc(outputBitMapSize * sizeof (char));
 
-        memset(output_bitMap, 0, output_bitMapSize*sizeof (char));
-        createOutPutBitMap(output_bitMap, left_data, right_data, output_bitMapSize);
+        memset(outputBitMap, 0, outputBitMapSize * sizeof (char));
+        createOutPutBitMap(outputBitMap, leftData, rightData, outputBitMapSize);
 
         int offset = 0;
-        memcpy((char*)output_data + offset, output_bitMap, output_bitMapSize);
-        free(output_bitMap);
-        offset += output_bitMapSize;
+        memcpy((char*)outputData + offset, outputBitMap, outputBitMapSize);
+        free(outputBitMap);
+        offset += outputBitMapSize;
 
-        memcpy((char*)output_data + offset, (char*)left_data + left_bitMapSize, left_data_size - left_bitMapSize);
-        offset += (left_data_size - left_bitMapSize);
+        memcpy((char*)outputData + offset, (char*)leftData + leftBitMapSize, leftDataSize - leftBitMapSize);
+        offset += (leftDataSize - leftBitMapSize);
 
-        memcpy((char*)output_data + offset, (char*)right_data + right_bitMapSize, right_data_size - right_bitMapSize);
+        memcpy((char*)outputData + offset, (char*)rightData + rightBitMapSize, rightDataSize - rightBitMapSize);
 
-        offset += (right_data_size - right_bitMapSize);
+        offset += (rightDataSize - rightBitMapSize);
     }
 
     RC BNLJoin::createOutPutBitMap(void* &output_bitMap, void* &left_data, void* &right_data, int &output_bitMapSize){
@@ -490,26 +502,27 @@ namespace PeterDB {
             if(this->bnl_leftIn->getNextTuple(data)){
                 free(data);
                 this->finished_scan_left_table = true;
-                break;
+                return 0;
             }
             int sizeOfData = getSizeOfData(data, this->leftIn_attrs);
             totalsize += sizeOfData;
-            void* copy_data = malloc(sizeOfData);
-            memcpy(copy_data, data, sizeOfData);
+            void* copyData = malloc(sizeOfData);
+            memcpy(copyData, data, sizeOfData);
             free(data);
             void* read_attr = nullptr;
-            FileHandle dummy_fileHandle;
+            FileHandle dummyFileHandle;
             RID dummy_rid;
-            rbfm.readAttributeFromRecord(dummy_fileHandle, this->leftIn_attrs, dummy_rid, this->bnl_condition.lhsAttr, read_attr, copy_data);
+            rbfm.readAttributeFromRecord(dummyFileHandle, this->leftIn_attrs, dummy_rid, this->bnl_condition.lhsAttr, read_attr, copyData);
             int key = *(int*)((char*)read_attr + sizeof (char ));
             if(map.find(key) != map.end()){
-                map[key].push_back(copy_data);
+                map[key].push_back(copyData);
             }else{
                 std::vector<void*> v;
-                v.push_back(copy_data);
+                v.push_back(copyData);
                 map[key] = v;
             }
         }
+        return 0;
     }
 
     RC BNLJoin::loadTuplesRightTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map){
@@ -526,19 +539,19 @@ namespace PeterDB {
             }
             int sizeOfData = getSizeOfData(data, this->rightIn_attrs);
             totalsize += sizeOfData;
-            void* copy_data = malloc(sizeOfData);
-            memcpy(copy_data, data, sizeOfData);
+            void* copyData = malloc(sizeOfData);
+            memcpy(copyData, data, sizeOfData);
             free(data);
             void* read_attr = nullptr;
-            FileHandle dummy_fileHandle;
+            FileHandle dummyFileHandle;
             RID dummy_rid;
-            rbfm.readAttributeFromRecord(dummy_fileHandle, this->rightIn_attrs, dummy_rid, this->bnl_condition.rhsAttr, read_attr, copy_data);
+            rbfm.readAttributeFromRecord(dummyFileHandle, this->rightIn_attrs, dummy_rid, this->bnl_condition.rhsAttr, read_attr, copyData);
             int key = *(int*)((char*)read_attr + sizeof (char ));
             if(map.find(key) != map.end()){
-                map[key].push_back(copy_data);
+                map[key].push_back(copyData);
             }else{
                 std::vector<void*> v;
-                v.push_back(copy_data);
+                v.push_back(copyData);
                 map[key] = v;
             }
         }
