@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <cmath>
 #include <bitset>
+#include <unordered_map>
+
 namespace PeterDB {
     Filter::Filter(Iterator *input, const Condition &condition) {
         this->itr = input;
@@ -31,7 +33,6 @@ namespace PeterDB {
     bool Filter::is_record_satisfiable(void* data, Condition& cond){
         if(cond.op == NO_OP) return true;
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
-
 
         void* read_attr = nullptr;
         FileHandle dummy_fileHandle;
@@ -234,7 +235,57 @@ namespace PeterDB {
     }
 
     BNLJoin::BNLJoin(Iterator *leftIn, TableScan *rightIn, const Condition &condition, const unsigned int numPages) {
+        this->bnl_leftIn = leftIn;
+        this->bnl_rightIn = rightIn;
+        this->bnl_condition = condition;
+        this->bnl_numPages = numPages;
+        this->start = true;
+        this->curr_output_index = -1;
+        this->finished_scan_left_table = false;
+        this->finished_scan_right_table = false;
+        leftIn->getAttributes(this->leftIn_attrs);
+        rightIn->getAttributes(this->rightIn_attrs);
+        this->getAttributes(joined_attrs);
+        for(Attribute attribute : leftIn_attrs){
+            if(attribute.name == condition.lhsAttr){
+                this->join_keyType = attribute.type;
+                break;
+            }
+        }
+    }
 
+    int BNLJoin::getSizeOfData(void* &data, std::vector<Attribute> &recordDescriptor){
+        int result = 0;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int numberOfCols = recordDescriptor.size();
+        int bitMapSize = ceil((float)numberOfCols/8);
+        result += bitMapSize;
+
+        int N = 0;
+        std::vector<bool> nullIndicator;
+        for(int k = 0; k < numberOfCols; k++){
+            bool isNull = rbfm.isColValueNull(data, k);
+            nullIndicator.push_back(isNull);
+            N++;
+        }
+        char* pointer = (char *)data + bitMapSize * sizeof(char);
+        for(int k = 0; k < numberOfCols; k++){
+            bool isNull = nullIndicator.at(k);
+            if(isNull) continue;
+            Attribute attr = recordDescriptor.at(k);
+            if(attr.type == TypeVarChar){
+                unsigned len = *(int *) pointer;
+                result += sizeof (unsigned ) + len;
+                pointer = pointer + len + 4;
+            } else if(attr.type == TypeInt){
+                result += sizeof (unsigned );
+                pointer += sizeof (unsigned );
+            }else{
+                result += sizeof (float );
+                pointer += sizeof (float );
+            }
+        }
+        return result;
     }
 
     BNLJoin::~BNLJoin() {
@@ -242,11 +293,188 @@ namespace PeterDB {
     }
 
     RC BNLJoin::getNextTuple(void *data) {
-        return -1;
+
+        if(this->join_keyType == TypeInt){
+            if(start){
+                start = false;
+                std::unordered_map<int, std::vector<void*>> left_map;
+                std::unordered_map<int, std::vector<void*>> right_map;
+                loadTuplesLeftTable_TypeInt(left_map);
+                loadTuplesRightTable_TypeInt(right_map);
+                joinTwoTables_TypeInt(left_map, right_map, this->output);
+            }
+            curr_output_index++;
+            //all exhausted, load again
+
+        }
+        return 0;
+    }
+
+    RC BNLJoin::joinTwoTables_TypeInt(std::unordered_map<int, std::vector<void*>> &left_map, std::unordered_map<int, std::vector<void*>> &right_map, std::vector<void*> &output){
+        for(auto const &left_pair: left_map){
+            int left_key = left_pair.first;
+            for(auto const &right_pair: right_map){
+                int right_key = right_pair.first;
+                if(left_key == right_key){
+                    for(void* left_data : left_pair.second){
+                        for(void* right_data: right_pair.second){
+                            void* output_data = nullptr;
+                            joinTwoData(left_data, right_data, output_data);
+                            output.push_back(output_data);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    RC BNLJoin::joinTwoData(void* &left_data, void* &right_data, void* & output_data){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int left_data_size = getSizeOfData(left_data, this->leftIn_attrs);
+        int right_data_size = getSizeOfData(right_data, this->rightIn_attrs);
+
+        int left_numberOfCols = this->leftIn_attrs.size();
+        int right_numberOfCols = this->rightIn_attrs.size();
+        int output_numberOfCols = this->joined_attrs.size();
+
+        int left_bitMapSize = ceil((float)left_numberOfCols/8);
+        int right_bitMapSize = ceil((float)right_numberOfCols/8);
+        int output_bitMapSize = ceil((float)output_numberOfCols/8);
+
+        int output_data_size = left_data_size + right_data_size - left_bitMapSize - right_bitMapSize + output_bitMapSize;
+
+        output_data = malloc(output_data_size);
+        memset(output_data, 0, output_data_size);
+        void* output_bitMap = malloc(output_bitMapSize*sizeof (char));
+
+        memset(output_bitMap, 0, output_bitMapSize*sizeof (char));
+        createOutPutBitMap(output_bitMap, left_data, right_data, output_bitMapSize);
+
+        int offset = 0;
+        memcpy((char*)output_data + offset, output_bitMap, output_bitMapSize);
+        free(output_bitMap);
+        offset += output_bitMapSize;
+
+        memcpy((char*)output_data + offset, (char*)left_data + left_bitMapSize, left_data_size - left_bitMapSize);
+        offset += (left_data_size - left_bitMapSize);
+
+        memcpy((char*)output_data + offset, (char*)right_data + right_bitMapSize, right_data_size - right_bitMapSize);
+
+        offset += (right_data_size - right_bitMapSize);
+    }
+
+    RC BNLJoin::createOutPutBitMap(void* &output_bitMap, void* &left_data, void* &right_data, int &output_bitMapSize){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int left_numberOfCols = this->leftIn_attrs.size();
+
+        std::vector<bool> left_nullIndicator;
+        for(int k = 0; k < left_numberOfCols; k++){
+            bool isNull = rbfm.isColValueNull(left_data, k);
+            left_nullIndicator.push_back(isNull);
+        }
+
+        int right_numberOfCols = this->rightIn_attrs.size();
+        std::vector<bool> right_nullIndicator;
+
+        for(int k = 0; k < right_numberOfCols; k++){
+            bool isNull = rbfm.isColValueNull(right_data, k);
+            right_nullIndicator.push_back(isNull);
+        }
+
+        std::vector<std::bitset<8>> temp_bitMap(output_bitMapSize);
+        int j = 0;
+        for(int i = 0; i < left_nullIndicator.size(); i++){
+            if(left_nullIndicator.at(i)){
+                temp_bitMap[j/8].set(8 - j%8 - 1);
+            }
+            j++;
+        }
+        for(int i = 0 ; i < right_nullIndicator.size(); i++){
+            if(right_nullIndicator.at(i)){
+                temp_bitMap[j/8].set(8 - j%8 - 1);
+            }
+            j++;
+        }
+        for(int i = 0; i < output_bitMapSize; i++){
+            char* pointer = (char*)&temp_bitMap[i];
+            memcpy((char*)output_bitMap + i, pointer, sizeof (char));
+        }
+    }
+
+    RC BNLJoin::loadTuplesLeftTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int totalsize = 0;
+        while(totalsize < this->bnl_numPages*PAGE_SIZE){
+            void* data = malloc(PAGE_SIZE);
+            if(this->bnl_leftIn->getNextTuple(data)){
+                free(data);
+                this->finished_scan_left_table = true;
+                break;
+            }
+            int sizeOfData = getSizeOfData(data, this->leftIn_attrs);
+            totalsize += sizeOfData;
+            void* copy_data = malloc(sizeOfData);
+            memcpy(copy_data, data, sizeOfData);
+            free(data);
+            void* read_attr = nullptr;
+            FileHandle dummy_fileHandle;
+            RID dummy_rid;
+            rbfm.readAttributeFromRecord(dummy_fileHandle, this->leftIn_attrs, dummy_rid, this->bnl_condition.lhsAttr, read_attr, copy_data);
+            int key = *(int*)((char*)read_attr + sizeof (char ));
+            if(map.find(key) != map.end()){
+                map[key].push_back(copy_data);
+            }else{
+                std::vector<void*> v;
+                v.push_back(copy_data);
+                map[key] = v;
+            }
+        }
+    }
+
+    RC BNLJoin::loadTuplesRightTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int totalsize = 0;
+        while(totalsize < PAGE_SIZE){
+            void* data = malloc(PAGE_SIZE);
+            if(this->bnl_rightIn->getNextTuple(data)){
+                free(data);
+                this->finished_scan_right_table = true;
+                break;
+            }
+            int sizeOfData = getSizeOfData(data, this->rightIn_attrs);
+            totalsize += sizeOfData;
+            void* copy_data = malloc(sizeOfData);
+            memcpy(copy_data, data, sizeOfData);
+            free(data);
+            void* read_attr = nullptr;
+            FileHandle dummy_fileHandle;
+            RID dummy_rid;
+            rbfm.readAttributeFromRecord(dummy_fileHandle, this->rightIn_attrs, dummy_rid, this->bnl_condition.rhsAttr, read_attr, copy_data);
+            int key = *(int*)((char*)read_attr + sizeof (char ));
+            if(map.find(key) != map.end()){
+                map[key].push_back(copy_data);
+            }else{
+                std::vector<void*> v;
+                v.push_back(copy_data);
+                map[key] = v;
+            }
+        }
+
     }
 
     RC BNLJoin::getAttributes(std::vector<Attribute> &attrs) const {
-        return -1;
+        std::vector<Attribute> leftIn_attr;
+        std::vector<Attribute> rightIn_attr;
+        this->bnl_leftIn->getAttributes(leftIn_attr);
+        this->bnl_rightIn->getAttributes(rightIn_attr);
+
+        for(Attribute attribute: leftIn_attr){
+            attrs.push_back(attribute);
+        }
+        for(Attribute attribute: rightIn_attr){
+            attrs.push_back(attribute);
+        }
+        return 0;
     }
 
     INLJoin::INLJoin(Iterator *leftIn, IndexScan *rightIn, const Condition &condition) {

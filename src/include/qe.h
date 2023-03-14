@@ -5,7 +5,7 @@
 #include <string>
 #include <limits>
 #include <cstring>
-
+#include <unordered_map>
 #include "rm.h"
 #include "ix.h"
 #include "rbfm.h"
@@ -215,6 +215,26 @@ namespace PeterDB {
 
         // For attribute in std::vector<Attribute>, name it as rel.attr
         RC getAttributes(std::vector<Attribute> &attrs) const override;
+        RC loadTuplesLeftTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map);
+        RC loadTuplesRightTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map);
+        int getSizeOfData(void* &data, std::vector<Attribute> &recordDescriptor);
+        RC joinTwoTables_TypeInt(std::unordered_map<int, std::vector<void*>> &left_map, std::unordered_map<int, std::vector<void*>> &right_map, std::vector<void*> &output);
+        RC joinTwoData(void* &left_data, void* &right_data, void* & output_data);
+        RC createOutPutBitMap(void* &output_bitMap, void* &left_data, void* &right_data, int &output_bitMapSize);
+    private:
+        Iterator *bnl_leftIn = nullptr;
+        TableScan *bnl_rightIn = nullptr;
+        Condition bnl_condition;
+        unsigned bnl_numPages = 0;
+        std::vector<Attribute> leftIn_attrs;
+        std::vector<Attribute> rightIn_attrs;
+        std::vector<Attribute> joined_attrs;
+        AttrType join_keyType;
+        bool start = true;
+        std::vector<void*> output;
+        int curr_output_index = -1;
+        bool finished_scan_left_table = false;
+        bool finished_scan_right_table = false;
     };
 
     class INLJoin : public Iterator {
