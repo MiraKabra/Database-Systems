@@ -348,6 +348,8 @@ namespace PeterDB {
                     }
                     output.clear();
 
+                    this->finished_scan_right_table = false;
+
                     loadTuplesLeftTable_TypeInt(this->left_map_int);
                     //set iterator of right table to initial position again
                     this->bnl_rightIn = this->bnl_righIn_initial;
@@ -382,7 +384,6 @@ namespace PeterDB {
                 }
             }
             data = output.at(curr_output_index);
-            curr_output_index++;
         }
         return 0;
     }
@@ -482,8 +483,10 @@ namespace PeterDB {
     RC BNLJoin::loadTuplesLeftTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map){
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         int totalsize = 0;
+        int count = 0;
         while(totalsize < this->bnl_numPages*PAGE_SIZE){
             void* data = malloc(PAGE_SIZE);
+            count++;
             if(this->bnl_leftIn->getNextTuple(data)){
                 free(data);
                 this->finished_scan_left_table = true;
@@ -512,8 +515,10 @@ namespace PeterDB {
     RC BNLJoin::loadTuplesRightTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map){
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         int totalsize = 0;
+        int count = 0;
         while(totalsize < PAGE_SIZE){
             void* data = malloc(PAGE_SIZE);
+            count++;
             if(this->bnl_rightIn->getNextTuple(data)){
                 free(data);
                 this->finished_scan_right_table = true;
@@ -541,6 +546,7 @@ namespace PeterDB {
     }
 
     RC BNLJoin::getAttributes(std::vector<Attribute> &attrs) const {
+        if(attrs.size() != 0) attrs.clear();
         std::vector<Attribute> leftIn_attr;
         std::vector<Attribute> rightIn_attr;
         this->bnl_leftIn->getAttributes(leftIn_attr);
