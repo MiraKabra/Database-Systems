@@ -399,8 +399,9 @@ namespace PeterDB {
             }
             int data_size = getSizeOfData(output.at(curr_output_index), this->joined_attrs);
             memcpy(data, output.at(curr_output_index), data_size);
+            return 0;
         }
-        return 0;
+        return -1;
     }
 
 
