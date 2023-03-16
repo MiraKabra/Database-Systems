@@ -401,6 +401,111 @@ namespace PeterDB {
             memcpy(data, output.at(curr_output_index), data_size);
             return 0;
         }
+        else if(this->join_keyType == TypeReal) {
+            if(start) {
+                start = false;
+                loadTuplesLeftTable_TypeReal(this->left_map_real);
+                loadTuplesRightTable_TypeReal(this->right_map_real);
+                joinTwoTables_TypeReal(this->left_map_real, this->right_map_real, this->output);
+            }
+            curr_output_index++;
+            //all exhausted, load again
+            if(curr_output_index == output.size()){
+                //free data in output
+                for(void* d: output){
+                    free(d);
+                }
+                output.clear();
+                while(output.size() == 0){
+                    if(!finished_scan_right_table){
+
+                        //free data in right map
+                        for(auto const &rightPair: right_map_real){
+                            for(void* rightData: rightPair.second){
+                                free(rightData);
+                            }
+                        }
+                        right_map_real.clear();
+
+                        //free data in output
+                        for(void* d: output){
+                            free(d);
+                        }
+                        output.clear();
+
+                        loadTuplesRightTable_TypeReal(this->right_map_real);
+                        joinTwoTables_TypeReal(this->left_map_real, this->right_map_real, this->output);
+                        curr_output_index = 0;
+                    }else if(!finished_scan_left_table){
+
+                        //free data in left map
+                        for(auto const &leftPair: left_map_real){
+                            for(void* leftData: leftPair.second){
+                                free(leftData);
+                            }
+                        }
+                        left_map_real.clear();
+
+                        //free data in right map
+                        for(auto const &rightPair: right_map_real){
+                            for(void* rightData: rightPair.second){
+                                free(rightData);
+                            }
+                        }
+                        right_map_real.clear();
+
+                        //free data in output
+                        for(void* d: output){
+                            free(d);
+                        }
+                        output.clear();
+
+                        this->finished_scan_right_table = false;
+
+                        loadTuplesLeftTable_TypeReal(this->left_map_real);
+                        //set iterator of right table to initial position again
+                        this->bnl_rightIn = new TableScan(*this->bnl_righIn_initial);
+
+                        loadTuplesRightTable_TypeReal(this->right_map_real);
+                        joinTwoTables_TypeReal(this->left_map_real, this->right_map_real, this->output);
+
+                        curr_output_index = 0;
+                    }else{
+                        //Both left and right scan are complete
+                        //free data in left map
+                        for(auto const &leftPair: left_map_real){
+                            for(void* leftData: leftPair.second){
+                                free(leftData);
+                            }
+                        }
+                        left_map_real.clear();
+
+                        //free data in right map
+                        for(auto const &rightPair: right_map_real){
+                            for(void* rightData: rightPair.second){
+                                free(rightData);
+                            }
+                        }
+                        right_map_real.clear();
+
+                        //free data in output
+                        for(void* d: output){
+                            free(d);
+                        }
+                        output.clear();
+
+                        return -1;
+                    }
+                }
+            }
+
+            if(output.size() == 0){
+                1;
+            }
+            int data_size = getSizeOfData(output.at(curr_output_index), this->joined_attrs);
+            memcpy(data, output.at(curr_output_index), data_size);
+            return 0;
+        }
         return -1;
     }
 
@@ -419,21 +524,40 @@ namespace PeterDB {
                     }
                 }
             }
-            if(false) {
-                for (auto const &right_pair: right_map) {
-                    int right_key = right_pair.first;
-                    if (left_key == right_key) {
-                        for (void *left_data: left_pair.second) {
-                            for (void *right_data: right_pair.second) {
-                                void *output_data = nullptr;
-                                joinTwoData(left_data, right_data, output_data);
-                                output.push_back(output_data);
-                            }
-                        }
+//            if(false) {
+//                for (auto const &right_pair: right_map) {
+//                    int right_key = right_pair.first;
+//                    if (left_key == right_key) {
+//                        for (void *left_data: left_pair.second) {
+//                            for (void *right_data: right_pair.second) {
+//                                void *output_data = nullptr;
+//                                joinTwoData(left_data, right_data, output_data);
+//                                output.push_back(output_data);
+//                            }
+//                        }
+//                    }
+//                }
+//            }
+        }
+        return 0;
+    }
+
+    RC BNLJoin::joinTwoTables_TypeReal(std::unordered_map<float, std::vector<void*>> &left_map, std::unordered_map<float, std::vector<void*>> &right_map, std::vector<void*> &output){
+        int count = 0;
+        for(auto const &left_pair: left_map){
+            float left_key = left_pair.first;
+            if(right_map.find(left_key) != right_map.end()){
+                for(void* left_data : left_pair.second){
+                    for(void* right_data: right_map[left_key]){
+                        count++;
+                        void* output_data = nullptr;
+                        joinTwoData(left_data, right_data, output_data);
+                        output.push_back(output_data);
                     }
                 }
             }
         }
+        return 0;
     }
 
     RC BNLJoin::joinTwoData(void* &leftData, void* &rightData, void* & outputData){
@@ -509,6 +633,39 @@ namespace PeterDB {
         }
     }
 
+    RC BNLJoin::loadTuplesLeftTable_TypeReal(std::unordered_map<float, std::vector<void*>> &map){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int totalsize = 0;
+        int count = 0;
+        while(totalsize < this->bnl_numPages*PAGE_SIZE){
+            void* data = malloc(PAGE_SIZE);
+            count++;
+            if(this->bnl_leftIn->getNextTuple(data)){
+                free(data);
+                this->finished_scan_left_table = true;
+                return 0;
+            }
+            int sizeOfData = getSizeOfData(data, this->leftIn_attrs);
+            totalsize += sizeOfData;
+            void* copyData = malloc(sizeOfData);
+            memcpy(copyData, data, sizeOfData);
+            free(data);
+            void* read_attr = nullptr;
+            FileHandle dummyFileHandle;
+            RID dummy_rid;
+            rbfm.readAttributeFromRecord(dummyFileHandle, this->leftIn_attrs, dummy_rid, this->bnl_condition.lhsAttr, read_attr, copyData);
+            float key = *(float *)((char*)read_attr + sizeof (char ));
+            if(map.find(key) != map.end()){
+                map[key].push_back(copyData);
+            }else{
+                std::vector<void*> v;
+                v.push_back(copyData);
+                map[key] = v;
+            }
+        }
+        return 0;
+    }
+
     RC BNLJoin::loadTuplesLeftTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map){
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         int totalsize = 0;
@@ -546,6 +703,40 @@ namespace PeterDB {
         return 0;
     }
 
+    RC BNLJoin::loadTuplesRightTable_TypeReal(std::unordered_map<float, std::vector<void*>> &map){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int totalsize = 0;
+        int count = 0;
+        while(totalsize < PAGE_SIZE){
+            void* data = malloc(PAGE_SIZE);
+            count++;
+            if(this->bnl_rightIn->getNextTuple(data)){
+                free(data);
+                this->finished_scan_right_table = true;
+                break;
+            }
+            int sizeOfData = getSizeOfData(data, this->rightIn_attrs);
+            totalsize += sizeOfData;
+            void* copyData = malloc(sizeOfData);
+            memcpy(copyData, data, sizeOfData);
+            free(data);
+            void* read_attr = nullptr;
+            FileHandle dummyFileHandle;
+            RID dummy_rid;
+            rbfm.readAttributeFromRecord(dummyFileHandle, this->rightIn_attrs, dummy_rid, this->bnl_condition.rhsAttr, read_attr, copyData);
+            float key = *(float*)((char*)read_attr + sizeof (char ));
+            if(map.find(key) != map.end()){
+                map[key].push_back(copyData);
+            }else{
+                std::vector<void*> v;
+                v.push_back(copyData);
+                map[key] = v;
+            }
+        }
+        return 0;
+    }
+
+
     RC BNLJoin::loadTuplesRightTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map){
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         int totalsize = 0;
@@ -576,7 +767,7 @@ namespace PeterDB {
                 map[key] = v;
             }
         }
-
+        return 0;
     }
 
     RC BNLJoin::getAttributes(std::vector<Attribute> &attrs) const {

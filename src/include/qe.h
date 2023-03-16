@@ -216,9 +216,12 @@ namespace PeterDB {
         // For attribute in std::vector<Attribute>, name it as rel.attr
         RC getAttributes(std::vector<Attribute> &attrs) const override;
         RC loadTuplesLeftTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map);
+        RC loadTuplesLeftTable_TypeReal(std::unordered_map<float, std::vector<void*>> &map);
         RC loadTuplesRightTable_TypeInt(std::unordered_map<int, std::vector<void*>> &map);
+        RC loadTuplesRightTable_TypeReal(std::unordered_map<float, std::vector<void*>> &map);
         int getSizeOfData(void* &data, std::vector<Attribute> &recordDescriptor);
         RC joinTwoTables_TypeInt(std::unordered_map<int, std::vector<void*>> &left_map, std::unordered_map<int, std::vector<void*>> &right_map, std::vector<void*> &output);
+        RC joinTwoTables_TypeReal(std::unordered_map<float, std::vector<void*>> &left_map, std::unordered_map<float, std::vector<void*>> &right_map, std::vector<void*> &output);
         RC joinTwoData(void* &leftData, void* &rightData, void* & outputData);
         RC createOutPutBitMap(void* &output_bitMap, void* &left_data, void* &right_data, int &output_bitMapSize);
     private:
@@ -235,6 +238,8 @@ namespace PeterDB {
 
         std::unordered_map<int, std::vector<void*>> left_map_int;
         std::unordered_map<int, std::vector<void*>> right_map_int;
+        std::unordered_map<float, std::vector<void*>> left_map_real;
+        std::unordered_map<float, std::vector<void*>> right_map_real;
 
         std::vector<void*> output;
         int curr_output_index = -1;
