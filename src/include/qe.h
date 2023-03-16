@@ -256,6 +256,20 @@ namespace PeterDB {
 
         // For attribute in std::vector<Attribute>, name it as rel.attr
         RC getAttributes(std::vector<Attribute> &attrs) const override;
+        RC joinTwoData(void* &leftData, void* &rightData, void* & outputData);
+        RC createOutPutBitMap(void* &output_bitMap, void* &left_data, void* &right_data, int &output_bitMapSize);
+        int getSizeOfData(void* &data, std::vector<Attribute> &recordDescriptor);
+    private:
+        Iterator *inl_leftIn = nullptr;
+        IndexScan *inl_rightIn = nullptr;
+        Condition inl_condition;
+        std::vector<Attribute> leftIn_attrs;
+        std::vector<Attribute> rightIn_attrs;
+        std::vector<Attribute> joined_attrs;
+        AttrType join_keyType;
+        bool finished_index_scan_for_curr_tuple = false;
+        bool start = true;
+        void* leftData = nullptr;
     };
 
     // 10 extra-credit points

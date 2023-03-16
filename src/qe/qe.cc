@@ -361,6 +361,7 @@ namespace PeterDB {
                         loadTuplesLeftTable_TypeInt(this->left_map_int);
                         //set iterator of right table to initial position again
                         this->bnl_rightIn = new TableScan(*this->bnl_righIn_initial);
+
                         loadTuplesRightTable_TypeInt(this->right_map_int);
                         joinTwoTables_TypeInt(this->left_map_int, this->right_map_int, this->output);
                         curr_output_index = 0;
@@ -594,7 +595,21 @@ namespace PeterDB {
     }
 
     INLJoin::INLJoin(Iterator *leftIn, IndexScan *rightIn, const Condition &condition) {
-
+        this->inl_leftIn = leftIn;
+        this->inl_rightIn = rightIn;
+        this->inl_condition = condition;
+        this->finished_index_scan_for_curr_tuple = false;
+        leftIn->getAttributes(this->leftIn_attrs);
+        rightIn->getAttributes(this->rightIn_attrs);
+        this->getAttributes(this->joined_attrs);
+        this->leftData = malloc(PAGE_SIZE);
+        memset(leftData, 0, PAGE_SIZE);
+        for(Attribute attribute : leftIn_attrs){
+            if(attribute.name == condition.lhsAttr){
+                this->join_keyType = attribute.type;
+                break;
+            }
+        }
     }
 
     INLJoin::~INLJoin() {
@@ -602,11 +617,193 @@ namespace PeterDB {
     }
 
     RC INLJoin::getNextTuple(void *data) {
-        return -1;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        if(start){
+            finished_index_scan_for_curr_tuple = true;
+        }
+        while(true){
+            if(finished_index_scan_for_curr_tuple){
+                if(this->inl_leftIn->getNextTuple(leftData) != -1){
+                    start = false;
+                    finished_index_scan_for_curr_tuple = false;
+                    void* key = nullptr;
+                    void* read_attr = nullptr;
+                    FileHandle dummyFileHandle;
+                    RID dummy_rid;
+                    rbfm.readAttributeFromRecord(dummyFileHandle, this->leftIn_attrs, dummy_rid, this->inl_condition.lhsAttr, read_attr, leftData);
+                    if(join_keyType == TypeInt || join_keyType == TypeReal){
+                        key = malloc(sizeof (unsigned ));
+                        memcpy(key, (char*)read_attr + sizeof (char ), sizeof (unsigned ));
+                    }
+                    if(inl_condition.op == EQ_OP){
+                        inl_rightIn->setIterator(key, key, true, true);
+                    }else if(inl_condition.op == LT_OP){
+                        inl_rightIn->setIterator(NULL, key, true, false);
+                    }else if(inl_condition.op == LE_OP){
+                        inl_rightIn->setIterator(NULL, key, true, true);
+                    }else if(inl_condition.op == GT_OP){
+                        inl_rightIn->setIterator(key, NULL, false, true);
+                    }else if(inl_condition.op == GE_OP){
+                        inl_rightIn->setIterator(key, NULL, true, true);
+                    }
+                    void* right_data = malloc(PAGE_SIZE);
+                    if(inl_rightIn->getNextTuple(right_data) != -1){
+                        int sizeOfData_right = getSizeOfData(right_data, rightIn_attrs);
+                        void* copyRightData = malloc(sizeOfData_right);
+                        memcpy(copyRightData, right_data, sizeOfData_right);
+                        free(right_data);
+                        joinTwoData(leftData, copyRightData, data);
+                        return 0;
+                    }else{
+                        finished_index_scan_for_curr_tuple = true;
+                        free(right_data);
+                    }
+                }else{
+                    return -1;
+                }
+            }else{
+                void* right_data = malloc(PAGE_SIZE);
+                if(inl_rightIn->getNextTuple(right_data) != -1){
+                    int sizeOfData_right = getSizeOfData(right_data, rightIn_attrs);
+                    void* copyRightData = malloc(sizeOfData_right);
+                    memcpy(copyRightData, right_data, sizeOfData_right);
+                    free(right_data);
+                    joinTwoData(leftData, copyRightData, data);
+                    return 0;
+                }else{
+                    finished_index_scan_for_curr_tuple = true;
+                    memset(leftData, 0, PAGE_SIZE);
+                    free(right_data);
+                }
+            }
+        }
+
+        return 0;
     }
 
     RC INLJoin::getAttributes(std::vector<Attribute> &attrs) const {
-        return -1;
+        if(attrs.size() != 0) attrs.clear();
+        std::vector<Attribute> leftIn_attr;
+        std::vector<Attribute> rightIn_attr;
+        this->inl_leftIn->getAttributes(leftIn_attr);
+        this->inl_rightIn->getAttributes(rightIn_attr);
+
+        for(Attribute attribute: leftIn_attr){
+            attrs.push_back(attribute);
+        }
+        for(Attribute attribute: rightIn_attr){
+            attrs.push_back(attribute);
+        }
+        return 0;
+    }
+
+    int INLJoin::getSizeOfData(void* &data, std::vector<Attribute> &recordDescriptor){
+        int result = 0;
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int numberOfCols = recordDescriptor.size();
+        int bitMapSize = ceil((float)numberOfCols/8);
+        result += bitMapSize;
+
+        int N = 0;
+        std::vector<bool> nullIndicator;
+        for(int k = 0; k < numberOfCols; k++){
+            bool isNull = rbfm.isColValueNull(data, k);
+            nullIndicator.push_back(isNull);
+            N++;
+        }
+        char* pointer = (char *)data + bitMapSize * sizeof(char);
+        for(int k = 0; k < numberOfCols; k++){
+            bool isNull = nullIndicator.at(k);
+            if(isNull) continue;
+            Attribute attr = recordDescriptor.at(k);
+            if(attr.type == TypeVarChar){
+                unsigned len = *(int *) pointer;
+                result += sizeof (unsigned ) + len;
+                pointer = pointer + len + 4;
+            } else if(attr.type == TypeInt){
+                result += sizeof (unsigned );
+                pointer += sizeof (unsigned );
+            }else{
+                result += sizeof (float );
+                pointer += sizeof (float );
+            }
+        }
+        return result;
+    }
+
+
+    RC INLJoin::joinTwoData(void* &leftData, void* &rightData, void* & outputData){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int leftDataSize = getSizeOfData(leftData, this->leftIn_attrs);
+        int rightDataSize = getSizeOfData(rightData, this->rightIn_attrs);
+
+        int leftNumberOfCols = this->leftIn_attrs.size();
+        int rightNumberOfCols = this->rightIn_attrs.size();
+        int outputNumberOfCols = this->joined_attrs.size();
+
+        int leftBitMapSize = ceil((float)leftNumberOfCols / 8);
+        int rightBitMapSize = ceil((float)rightNumberOfCols / 8);
+        int outputBitMapSize = ceil((float)outputNumberOfCols / 8);
+
+        int outputDataSize = leftDataSize + rightDataSize - leftBitMapSize - rightBitMapSize + outputBitMapSize;
+        if(outputData == nullptr){
+            outputData = malloc(outputDataSize);
+            memset(outputData, 0, outputDataSize);
+        }
+        void* outputBitMap = malloc(outputBitMapSize * sizeof (char));
+
+        memset(outputBitMap, 0, outputBitMapSize * sizeof (char));
+        createOutPutBitMap(outputBitMap, leftData, rightData, outputBitMapSize);
+
+        int offset = 0;
+        memcpy((char*)outputData + offset, outputBitMap, outputBitMapSize);
+        free(outputBitMap);
+        offset += outputBitMapSize;
+
+        memcpy((char*)outputData + offset, (char*)leftData + leftBitMapSize, leftDataSize - leftBitMapSize);
+        offset += (leftDataSize - leftBitMapSize);
+
+        memcpy((char*)outputData + offset, (char*)rightData + rightBitMapSize, rightDataSize - rightBitMapSize);
+
+        offset += (rightDataSize - rightBitMapSize);
+    }
+
+    RC INLJoin::createOutPutBitMap(void* &output_bitMap, void* &left_data, void* &right_data, int &output_bitMapSize){
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        int left_numberOfCols = this->leftIn_attrs.size();
+
+        std::vector<bool> left_nullIndicator;
+        for(int k = 0; k < left_numberOfCols; k++){
+            bool isNull = rbfm.isColValueNull(left_data, k);
+            left_nullIndicator.push_back(isNull);
+        }
+
+        int right_numberOfCols = this->rightIn_attrs.size();
+        std::vector<bool> right_nullIndicator;
+
+        for(int k = 0; k < right_numberOfCols; k++){
+            bool isNull = rbfm.isColValueNull(right_data, k);
+            right_nullIndicator.push_back(isNull);
+        }
+
+        std::vector<std::bitset<8>> temp_bitMap(output_bitMapSize);
+        int j = 0;
+        for(int i = 0; i < left_nullIndicator.size(); i++){
+            if(left_nullIndicator.at(i)){
+                temp_bitMap[j/8].set(8 - j%8 - 1);
+            }
+            j++;
+        }
+        for(int i = 0 ; i < right_nullIndicator.size(); i++){
+            if(right_nullIndicator.at(i)){
+                temp_bitMap[j/8].set(8 - j%8 - 1);
+            }
+            j++;
+        }
+        for(int i = 0; i < output_bitMapSize; i++){
+            char* pointer = (char*)&temp_bitMap[i];
+            memcpy((char*)output_bitMap + i, pointer, sizeof (char));
+        }
     }
 
     GHJoin::GHJoin(Iterator *leftIn, Iterator *rightIn, const Condition &condition, const unsigned int numPartitions) {
