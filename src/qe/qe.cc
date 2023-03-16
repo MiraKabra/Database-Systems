@@ -55,7 +55,7 @@ namespace PeterDB {
             return false;
         }
         void *attr_val = (char*)read_attr + sizeof (char);
-        if(attr->type == TypeInt || attr->type == TypeReal){
+        if(attr->type == TypeInt){
             int read_val = *(int *)((char*)attr_val);
             int given_val = *(int *)(cond.rhsValue.data);
             free(read_attr);
@@ -236,8 +236,10 @@ namespace PeterDB {
 
     BNLJoin::BNLJoin(Iterator *leftIn, TableScan *rightIn, const Condition &condition, const unsigned int numPages) {
         this->bnl_leftIn = leftIn;
-        this->bnl_rightIn = rightIn;
-        this->bnl_righIn_initial = rightIn;
+        this->bnl_rightIn = new TableScan(*rightIn);
+        //this->bnl_rightIn = rightIn;
+        //this->bnl_righIn_initial = rightIn;
+        this->bnl_righIn_initial = new TableScan(*rightIn);
         this->bnl_condition = condition;
         this->bnl_numPages = numPages;
         this->start = true;
@@ -305,83 +307,94 @@ namespace PeterDB {
             curr_output_index++;
             //all exhausted, load again
             if(curr_output_index == output.size()){
-                if(!finished_scan_right_table){
-
-                    //free data in right map
-                    for(auto const &rightPair: right_map_int){
-                        for(void* rightData: rightPair.second){
-                            free(rightData);
-                        }
-                    }
-                    right_map_int.clear();
-
-                    //free data in output
-                    for(void* d: output){
-                        free(d);
-                    }
-                    output.clear();
-
-                    loadTuplesRightTable_TypeInt(this->right_map_int);
-                    joinTwoTables_TypeInt(this->left_map_int, this->right_map_int, this->output);
-                    curr_output_index = 0;
-                }else if(!finished_scan_left_table){
-
-                    //free data in left map
-                    for(auto const &leftPair: left_map_int){
-                        for(void* leftData: leftPair.second){
-                            free(leftData);
-                        }
-                    }
-                    left_map_int.clear();
-
-                    //free data in right map
-                    for(auto const &rightPair: right_map_int){
-                        for(void* rightData: rightPair.second){
-                            free(rightData);
-                        }
-                    }
-                    right_map_int.clear();
-
-                    //free data in output
-                    for(void* d: output){
-                        free(d);
-                    }
-                    output.clear();
-
-                    this->finished_scan_right_table = false;
-
-                    loadTuplesLeftTable_TypeInt(this->left_map_int);
-                    //set iterator of right table to initial position again
-                    this->bnl_rightIn = this->bnl_righIn_initial;
-                    loadTuplesRightTable_TypeInt(this->right_map_int);
-                    joinTwoTables_TypeInt(this->left_map_int, this->right_map_int, this->output);
-                    curr_output_index = 0;
-                }else{
-                    //Both left and right scan are complete
-                    //free data in left map
-                    for(auto const &leftPair: left_map_int){
-                        for(void* leftData: leftPair.second){
-                            free(leftData);
-                        }
-                    }
-                    left_map_int.clear();
-
-                    //free data in right map
-                    for(auto const &rightPair: right_map_int){
-                        for(void* rightData: rightPair.second){
-                            free(rightData);
-                        }
-                    }
-                    right_map_int.clear();
-
-                    //free data in output
-                    for(void* d: output){
-                        free(d);
-                    }
-                    output.clear();
-
-                    return -1;
+                //free data in output
+                for(void* d: output){
+                    free(d);
                 }
+                output.clear();
+                while(output.size() == 0){
+                    if(!finished_scan_right_table){
+
+                        //free data in right map
+                        for(auto const &rightPair: right_map_int){
+                            for(void* rightData: rightPair.second){
+                                free(rightData);
+                            }
+                        }
+                        right_map_int.clear();
+
+                        //free data in output
+                        for(void* d: output){
+                            free(d);
+                        }
+                        output.clear();
+
+                        loadTuplesRightTable_TypeInt(this->right_map_int);
+                        joinTwoTables_TypeInt(this->left_map_int, this->right_map_int, this->output);
+                        curr_output_index = 0;
+                    }else if(!finished_scan_left_table){
+
+                        //free data in left map
+                        for(auto const &leftPair: left_map_int){
+                            for(void* leftData: leftPair.second){
+                                free(leftData);
+                            }
+                        }
+                        left_map_int.clear();
+
+                        //free data in right map
+                        for(auto const &rightPair: right_map_int){
+                            for(void* rightData: rightPair.second){
+                                free(rightData);
+                            }
+                        }
+                        right_map_int.clear();
+
+                        //free data in output
+                        for(void* d: output){
+                            free(d);
+                        }
+                        output.clear();
+
+                        this->finished_scan_right_table = false;
+
+                        loadTuplesLeftTable_TypeInt(this->left_map_int);
+                        //set iterator of right table to initial position again
+                        this->bnl_rightIn = new TableScan(*this->bnl_righIn_initial);
+                        loadTuplesRightTable_TypeInt(this->right_map_int);
+                        joinTwoTables_TypeInt(this->left_map_int, this->right_map_int, this->output);
+                        curr_output_index = 0;
+                    }else{
+                        //Both left and right scan are complete
+                        //free data in left map
+                        for(auto const &leftPair: left_map_int){
+                            for(void* leftData: leftPair.second){
+                                free(leftData);
+                            }
+                        }
+                        left_map_int.clear();
+
+                        //free data in right map
+                        for(auto const &rightPair: right_map_int){
+                            for(void* rightData: rightPair.second){
+                                free(rightData);
+                            }
+                        }
+                        right_map_int.clear();
+
+                        //free data in output
+                        for(void* d: output){
+                            free(d);
+                        }
+                        output.clear();
+
+                        return -1;
+                    }
+                }
+            }
+
+            if(output.size() == 0){
+                1;
             }
             int data_size = getSizeOfData(output.at(curr_output_index), this->joined_attrs);
             memcpy(data, output.at(curr_output_index), data_size);
@@ -391,11 +404,13 @@ namespace PeterDB {
 
 
     RC BNLJoin::joinTwoTables_TypeInt(std::unordered_map<int, std::vector<void*>> &left_map, std::unordered_map<int, std::vector<void*>> &right_map, std::vector<void*> &output){
+        int count = 0;
         for(auto const &left_pair: left_map){
             int left_key = left_pair.first;
             if(right_map.find(left_key) != right_map.end()){
                 for(void* left_data : left_pair.second){
                     for(void* right_data: right_map[left_key]){
+                        count++;
                         void* output_data = nullptr;
                         joinTwoData(left_data, right_data, output_data);
                         output.push_back(output_data);
@@ -496,6 +511,7 @@ namespace PeterDB {
         RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
         int totalsize = 0;
         int count = 0;
+        int count_twenty = 0;
         while(totalsize < this->bnl_numPages*PAGE_SIZE){
             void* data = malloc(PAGE_SIZE);
             count++;
@@ -514,6 +530,9 @@ namespace PeterDB {
             RID dummy_rid;
             rbfm.readAttributeFromRecord(dummyFileHandle, this->leftIn_attrs, dummy_rid, this->bnl_condition.lhsAttr, read_attr, copyData);
             int key = *(int*)((char*)read_attr + sizeof (char ));
+            if(key == 20){
+                count_twenty++;
+            }
             if(map.find(key) != map.end()){
                 map[key].push_back(copyData);
             }else{
