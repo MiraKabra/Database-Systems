@@ -1021,10 +1021,18 @@ namespace PeterDB {
         this->aggr_op = op;
         input->getAttributes(input_attrs);
         this->end = false;
+        this->group_by = false;
     }
 
     Aggregate::Aggregate(Iterator *input, const Attribute &aggAttr, const Attribute &groupAttr, AggregateOp op) {
-
+        this->aggr_input = input;
+        this->aggr_attr = aggAttr;
+        this->group_attr = groupAttr;
+        this->aggr_op = op;
+        input->getAttributes(input_attrs);
+        this->end = false;
+        this->group_by = true;
+        this->curr_index = -1;
     }
 
     Aggregate::~Aggregate() {
@@ -1032,72 +1040,222 @@ namespace PeterDB {
     }
 
     RC Aggregate::getNextTuple(void *data) {
-        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
-        if(this->aggr_op == MAX){
-            int max_val = INT_MIN;
-            void* input_data = malloc(PAGE_SIZE);
-            memset(input_data, 0, PAGE_SIZE);
-            while(aggr_input->getNextTuple(input_data) != -1){
-                end = true;
-                void* read_attr = nullptr;
-                FileHandle dummyFileHandle;
-                RID dummy_rid;
-                rbfm.readAttributeFromRecord(dummyFileHandle, this->input_attrs, dummy_rid, this->aggr_attr.name, read_attr, input_data);
-                void* key = malloc(sizeof (unsigned ));
-                memcpy(key, (char*)read_attr + sizeof (char ), sizeof (unsigned ));
-                if(*(int*)key > max_val){
-                    max_val = *(int*)key;
+        if(!group_by){
+            RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+            if(this->aggr_op == MAX){
+                int max_val = INT_MIN;
+                void* input_data = malloc(PAGE_SIZE);
+                memset(input_data, 0, PAGE_SIZE);
+                while(aggr_input->getNextTuple(input_data) != -1){
+                    end = true;
+                    void* read_attr = nullptr;
+                    FileHandle dummyFileHandle;
+                    RID dummy_rid;
+                    rbfm.readAttributeFromRecord(dummyFileHandle, this->input_attrs, dummy_rid, this->aggr_attr.name, read_attr, input_data);
+                    void* key = malloc(sizeof (unsigned ));
+                    memcpy(key, (char*)read_attr + sizeof (char ), sizeof (unsigned ));
+                    if(*(int*)key > max_val){
+                        max_val = *(int*)key;
+                    }
+                }
+                if(end){
+                    float max_val_real;
+                    max_val_real = (float )max_val;
+                    void* bitmap = malloc(sizeof (char));
+                    memset(bitmap, 0, sizeof(char ));
+                    memcpy(data, bitmap, sizeof (char ));
+                    free(bitmap);
+                    free(input_data);
+                    memcpy((char*)data + sizeof (char ), &max_val_real, sizeof (float ));
+                    end = false;
+                    return 0;
+                }
+            }else if(this->aggr_op == AVG){
+                int total = 0;
+                int count = 0;
+                void* input_data = malloc(PAGE_SIZE);
+                memset(input_data, 0, PAGE_SIZE);
+                while(aggr_input->getNextTuple(input_data) != -1){
+                    end = true;
+                    void* read_attr = nullptr;
+                    FileHandle dummyFileHandle;
+                    RID dummy_rid;
+                    rbfm.readAttributeFromRecord(dummyFileHandle, this->input_attrs, dummy_rid, this->aggr_attr.name, read_attr, input_data);
+                    void* key = malloc(sizeof (unsigned ));
+                    memcpy(key, (char*)read_attr + sizeof (char ), sizeof (unsigned ));
+                    total += *(int*)key;
+                    count++;
+                }
+                if(end){
+                    end = false;
+                    float avg_val = (float)total/count;
+                    void* bitmap = malloc(sizeof (char));
+                    memset(bitmap, 0, sizeof(char ));
+                    memcpy(data, bitmap, sizeof (char ));
+                    free(bitmap);
+                    free(input_data);
+                    memcpy((char*)data + sizeof (char ), &avg_val, sizeof (float ));
+                    end = false;
+                    return 0;
                 }
             }
-            if(end){
-                float max_val_real;
-                max_val_real = (float )max_val;
-                void* bitmap = malloc(sizeof (char));
-                memset(bitmap, 0, sizeof(char ));
-                memcpy(data, bitmap, sizeof (char ));
-                free(bitmap);
-                free(input_data);
-                memcpy((char*)data + sizeof (char ), &max_val_real, sizeof (float ));
-                end = false;
+
+            return -1;
+        }else{
+            RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+
+            if(this->aggr_op == MIN){
+                void* input_data = malloc(PAGE_SIZE);
+                memset(input_data, 0, PAGE_SIZE);
+                if(!end){
+                    while(aggr_input->getNextTuple(input_data) != -1){
+                        end = true;
+                        void* group_attr = nullptr;
+                        void* aggr_attr = nullptr;
+                        FileHandle dummyFileHandle;
+                        RID dummy_rid;
+
+                        rbfm.readAttributeFromRecord(dummyFileHandle, this->input_attrs, dummy_rid, this->group_attr.name, group_attr, input_data);
+                        void* group_key = malloc(sizeof (unsigned ));
+                        memcpy(group_key, (char*)group_attr + sizeof (char ), sizeof (unsigned ));
+                        if(map.find(*(int*)group_key) == map.end()){
+                            vec.push_back(*(int*)group_key);
+                            map[*(int*)group_key] = INT_MAX;
+                        }
+
+                        rbfm.readAttributeFromRecord(dummyFileHandle, this->input_attrs, dummy_rid, this->aggr_attr.name, aggr_attr, input_data);
+
+                        void* aggr_key = malloc(sizeof (unsigned ));
+                        memcpy(aggr_key, (char*)aggr_attr + sizeof (char ), sizeof (unsigned ));
+                        if(map[*(int*)group_key] > *(int*)aggr_key){
+                            map[*(int*)group_key] = *(int*)aggr_key;
+                        }
+                    }
+                }
+                if(end){
+                    curr_index++;
+                    if(curr_index == vec.size()){
+                        map.clear();
+                        vec.clear();
+                        return -1;
+                    }
+                    int group_by_attr = vec.at(curr_index);
+                    int aggr_attr_val = map[group_by_attr];
+                    void* bitmap = malloc(sizeof (char));
+                    memset(bitmap, 0, sizeof(char ));
+                    memcpy(data, bitmap, sizeof (char ));
+                    free(bitmap);
+                    if(input_data != nullptr){
+                        free(input_data);
+                        input_data = nullptr;
+                    }
+                    memcpy((char*)data + sizeof (char ), &group_by_attr, sizeof (float ));
+                    memcpy((char*)data + sizeof (char ) + sizeof (unsigned ), &aggr_attr_val, sizeof (unsigned ));
+                }
                 return 0;
-            }
-        }else if(this->aggr_op == AVG){
-            int total = 0;
-            int count = 0;
-            void* input_data = malloc(PAGE_SIZE);
-            memset(input_data, 0, PAGE_SIZE);
-            while(aggr_input->getNextTuple(input_data) != -1){
-                end = true;
-                void* read_attr = nullptr;
-                FileHandle dummyFileHandle;
-                RID dummy_rid;
-                rbfm.readAttributeFromRecord(dummyFileHandle, this->input_attrs, dummy_rid, this->aggr_attr.name, read_attr, input_data);
-                void* key = malloc(sizeof (unsigned ));
-                memcpy(key, (char*)read_attr + sizeof (char ), sizeof (unsigned ));
-                total += *(int*)key;
-                count++;
-            }
-            if(end){
-                end = false;
-                float avg_val = (float)total/count;
-                void* bitmap = malloc(sizeof (char));
-                memset(bitmap, 0, sizeof(char ));
-                memcpy(data, bitmap, sizeof (char ));
-                free(bitmap);
-                free(input_data);
-                memcpy((char*)data + sizeof (char ), &avg_val, sizeof (float ));
-                end = false;
+            }else if(this->aggr_op == SUM){
+                void* input_data = malloc(PAGE_SIZE);
+                memset(input_data, 0, PAGE_SIZE);
+                if(!end){
+                    while(aggr_input->getNextTuple(input_data) != -1){
+                        end = true;
+                        void* group_attr = nullptr;
+                        void* aggr_attr = nullptr;
+                        FileHandle dummyFileHandle;
+                        RID dummy_rid;
+
+                        rbfm.readAttributeFromRecord(dummyFileHandle, this->input_attrs, dummy_rid, this->group_attr.name, group_attr, input_data);
+                        void* group_key = malloc(sizeof (unsigned ));
+                        memcpy(group_key, (char*)group_attr + sizeof (char ), sizeof (unsigned ));
+                        if(map.find(*(int*)group_key) == map.end()){
+                            vec.push_back(*(int*)group_key);
+                            map[*(int*)group_key] = 0;
+                        }
+
+                        rbfm.readAttributeFromRecord(dummyFileHandle, this->input_attrs, dummy_rid, this->aggr_attr.name, aggr_attr, input_data);
+
+                        void* aggr_key = malloc(sizeof (unsigned ));
+                        memcpy(aggr_key, (char*)aggr_attr + sizeof (char ), sizeof (unsigned ));
+
+                        map[*(int*)group_key] += *(int*)aggr_key;
+
+                    }
+                }
+                if(end){
+                    curr_index++;
+                    if(curr_index == vec.size()){
+                        map.clear();
+                        vec.clear();
+                        return -1;
+                    }
+                    int group_by_attr = vec.at(curr_index);
+                    int aggr_attr_val = map[group_by_attr];
+                    void* bitmap = malloc(sizeof (char));
+                    memset(bitmap, 0, sizeof(char ));
+                    memcpy(data, bitmap, sizeof (char ));
+                    free(bitmap);
+                    if(input_data != nullptr){
+                        free(input_data);
+                        input_data = nullptr;
+                    }
+                    memcpy((char*)data + sizeof (char ), &group_by_attr, sizeof (float ));
+                    memcpy((char*)data + sizeof (char ) + sizeof (unsigned ), &aggr_attr_val, sizeof (unsigned ));
+                }
+                return 0;
+            }else if(this->aggr_op == COUNT){
+                void* input_data = malloc(PAGE_SIZE);
+                memset(input_data, 0, PAGE_SIZE);
+                if(!end){
+                    while(aggr_input->getNextTuple(input_data) != -1){
+                        end = true;
+                        void* group_attr = nullptr;
+                        FileHandle dummyFileHandle;
+                        RID dummy_rid;
+
+                        rbfm.readAttributeFromRecord(dummyFileHandle, this->input_attrs, dummy_rid, this->group_attr.name, group_attr, input_data);
+                        void* group_key = malloc(sizeof (unsigned ));
+                        memcpy(group_key, (char*)group_attr + sizeof (char ), sizeof (unsigned ));
+                        if(map.find(*(int*)group_key) == map.end()){
+                            vec.push_back(*(int*)group_key);
+                            map[*(int*)group_key] = 0;
+                        }
+                        map[*(int*)group_key] += 1;
+
+                    }
+                }
+                if(end){
+                    curr_index++;
+                    if(curr_index == vec.size()){
+                        map.clear();
+                        vec.clear();
+                        return -1;
+                    }
+                    int group_by_attr = vec.at(curr_index);
+                    int aggr_attr_val = map[group_by_attr];
+                    void* bitmap = malloc(sizeof (char));
+                    memset(bitmap, 0, sizeof(char ));
+                    memcpy(data, bitmap, sizeof (char ));
+                    free(bitmap);
+                    if(input_data != nullptr){
+                        free(input_data);
+                        input_data = nullptr;
+                    }
+                    memcpy((char*)data + sizeof (char ), &group_by_attr, sizeof (float ));
+                    memcpy((char*)data + sizeof (char ) + sizeof (unsigned ), &aggr_attr_val, sizeof (unsigned ));
+                }
                 return 0;
             }
         }
 
-        return -1;
     }
 
     RC Aggregate::getAttributes(std::vector<Attribute> &attrs) const {
         if(attrs.size() != 0) attrs.clear();
         //MAX, COUNT, SUM, AVG
         std::string new_attr_name = "";
+        if(group_by){
+            attrs.push_back({this->group_attr.name, TypeInt, 4});
+        }
         if(this->aggr_op == MIN){
             new_attr_name += "MIN";
         }else if(this->aggr_op == MAX){
@@ -1110,7 +1268,11 @@ namespace PeterDB {
             new_attr_name += "AVG";
         }
         new_attr_name += "(" + this->aggr_attr.name + ")";
-        attrs.push_back({new_attr_name, TypeReal, 4});
+        if(!group_by){
+            attrs.push_back({new_attr_name, TypeReal, 4});
+        }else{
+            attrs.push_back({new_attr_name, TypeInt, 4});
+        }
         return 0;
     }
 } // namespace PeterDB

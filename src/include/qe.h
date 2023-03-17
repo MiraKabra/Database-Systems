@@ -324,9 +324,14 @@ namespace PeterDB {
     private:
         Iterator *aggr_input = nullptr;
         Attribute  aggr_attr;
+        Attribute group_attr;
         AggregateOp aggr_op;
         std::vector<Attribute> input_attrs;
         bool end = false;
+        bool group_by = false;
+        int curr_index = -1;
+        std::unordered_map<int, int> map;
+        std::vector<int> vec;
     };
 } // namespace PeterDB
 
