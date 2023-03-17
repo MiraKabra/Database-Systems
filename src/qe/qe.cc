@@ -4,6 +4,7 @@
 #include <cmath>
 #include <bitset>
 #include <unordered_map>
+#include <climits>
 
 namespace PeterDB {
     Filter::Filter(Iterator *input, const Condition &condition) {
