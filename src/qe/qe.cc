@@ -1015,7 +1015,11 @@ namespace PeterDB {
     }
 
     Aggregate::Aggregate(Iterator *input, const Attribute &aggAttr, AggregateOp op) {
-
+        this->aggr_input = input;
+        this->aggr_attr = aggAttr;
+        this->aggr_op = op;
+        input->getAttributes(input_attrs);
+        this->end = false;
     }
 
     Aggregate::Aggregate(Iterator *input, const Attribute &aggAttr, const Attribute &groupAttr, AggregateOp op) {
@@ -1027,10 +1031,85 @@ namespace PeterDB {
     }
 
     RC Aggregate::getNextTuple(void *data) {
+        RecordBasedFileManager& rbfm = RecordBasedFileManager::instance();
+        if(this->aggr_op == MAX){
+            int max_val = INT_MIN;
+            void* input_data = malloc(PAGE_SIZE);
+            memset(input_data, 0, PAGE_SIZE);
+            while(aggr_input->getNextTuple(input_data) != -1){
+                end = true;
+                void* read_attr = nullptr;
+                FileHandle dummyFileHandle;
+                RID dummy_rid;
+                rbfm.readAttributeFromRecord(dummyFileHandle, this->input_attrs, dummy_rid, this->aggr_attr.name, read_attr, input_data);
+                void* key = malloc(sizeof (unsigned ));
+                memcpy(key, (char*)read_attr + sizeof (char ), sizeof (unsigned ));
+                if(*(int*)key > max_val){
+                    max_val = *(int*)key;
+                }
+            }
+            if(end){
+                float max_val_real;
+                max_val_real = (float )max_val;
+                void* bitmap = malloc(sizeof (char));
+                memset(bitmap, 0, sizeof(char ));
+                memcpy(data, bitmap, sizeof (char ));
+                free(bitmap);
+                free(input_data);
+                memcpy((char*)data + sizeof (char ), &max_val_real, sizeof (float ));
+                end = false;
+                return 0;
+            }
+        }else if(this->aggr_op == AVG){
+            int total = 0;
+            int count = 0;
+            void* input_data = malloc(PAGE_SIZE);
+            memset(input_data, 0, PAGE_SIZE);
+            while(aggr_input->getNextTuple(input_data) != -1){
+                end = true;
+                void* read_attr = nullptr;
+                FileHandle dummyFileHandle;
+                RID dummy_rid;
+                rbfm.readAttributeFromRecord(dummyFileHandle, this->input_attrs, dummy_rid, this->aggr_attr.name, read_attr, input_data);
+                void* key = malloc(sizeof (unsigned ));
+                memcpy(key, (char*)read_attr + sizeof (char ), sizeof (unsigned ));
+                total += *(int*)key;
+                count++;
+            }
+            if(end){
+                end = false;
+                float avg_val = (float)total/count;
+                void* bitmap = malloc(sizeof (char));
+                memset(bitmap, 0, sizeof(char ));
+                memcpy(data, bitmap, sizeof (char ));
+                free(bitmap);
+                free(input_data);
+                memcpy((char*)data + sizeof (char ), &avg_val, sizeof (float ));
+                end = false;
+                return 0;
+            }
+        }
+
         return -1;
     }
 
     RC Aggregate::getAttributes(std::vector<Attribute> &attrs) const {
-        return -1;
+        if(attrs.size() != 0) attrs.clear();
+        //MAX, COUNT, SUM, AVG
+        std::string new_attr_name = "";
+        if(this->aggr_op == MIN){
+            new_attr_name += "MIN";
+        }else if(this->aggr_op == MAX){
+            new_attr_name += "MAX";
+        }else if(this->aggr_op == COUNT){
+            new_attr_name += "COUNT";
+        }else if(this->aggr_op == SUM){
+            new_attr_name += "SUM";
+        }else if(this->aggr_op == AVG){
+            new_attr_name += "AVG";
+        }
+        new_attr_name += "(" + this->aggr_attr.name + ")";
+        attrs.push_back({new_attr_name, TypeReal, 4});
+        return 0;
     }
 } // namespace PeterDB

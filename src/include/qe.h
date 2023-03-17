@@ -321,6 +321,12 @@ namespace PeterDB {
         // E.g. Relation=rel, attribute=attr, aggregateOp=MAX
         // output attrName = "MAX(rel.attr)"
         RC getAttributes(std::vector<Attribute> &attrs) const override;
+    private:
+        Iterator *aggr_input = nullptr;
+        Attribute  aggr_attr;
+        AggregateOp aggr_op;
+        std::vector<Attribute> input_attrs;
+        bool end = false;
     };
 } // namespace PeterDB
 
