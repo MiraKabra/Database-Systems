@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include "src/include/rbfm.h"
+#include "src/include/ix.h"
 
 namespace PeterDB {
 #define RM_EOF (-1)  // end of a scan operator
@@ -31,6 +32,13 @@ namespace PeterDB {
         bool set_success = false;
     };
 
+//    IXFileHandle &ixFileHandle,
+//    const Attribute &attribute,
+//    const void *lowKey,
+//    const void *highKey,
+//    bool lowKeyInclusive,
+//    bool highKeyInclusive,
+//    IX_ScanIterator &ix_ScanIterator
     // RM_IndexScanIterator is an iterator to go through index entries
     class RM_IndexScanIterator {
     public:
@@ -40,7 +48,16 @@ namespace PeterDB {
         // "key" follows the same format as in IndexManager::insertEntry()
         RC getNextEntry(RID &rid, void *key);    // Get next matching entry
         RC close();                              // Terminate index scan
-
+        RC setScanner(IXFileHandle &ixFileHandle,
+                      const Attribute &attribute,
+                      const void *lowKey,
+                      const void *highKey,
+                      bool lowKeyInclusive,
+                      bool highKeyInclusive);
+    private:
+        IX_ScanIterator ix_ScanIterator;
+        IXFileHandle ixFileHandle;
+        bool set_success = false;
     };
 
     // Relation Manager
@@ -49,10 +66,13 @@ namespace PeterDB {
         static int tableCount;
         std::string table = "Tables";
         std::string column = "Columns";
+        std::string index = "Indexes";
         std::string table_file = "Tables";
         std::string column_file = "Columns";
+        std::string index_file = "Indexes";
         FileHandle table_handle;
         FileHandle column_handle;
+        FileHandle index_handle;
         bool catalog_exists = false;
         static RelationManager &instance();
 
@@ -65,7 +85,7 @@ namespace PeterDB {
         RC deleteTable(const std::string &tableName);
 
         RC getAttributes(const std::string &tableName, std::vector<Attribute> &attrs);
-
+        Attribute get_attribute_from_name(const std::string &tableName, const std::string &attributeName);
         RC insertTuple(const std::string &tableName, const void *data, RID &rid);
 
         RC deleteTuple(const std::string &tableName, const RID &rid);
@@ -114,8 +134,13 @@ namespace PeterDB {
         RC createDataForColumns_table(int table_id, std::string column_name, int column_type, int column_length, int column_position, void* &data);
         std::vector<Attribute> getTableAttribute();
         std::vector<Attribute> getColumnAttribute();
+        std::vector<Attribute> getIndexAttribute();
         RC prepare_value_for_varchar(const std::string &str, void* &value);
         bool isSystemTable(const std::string &tableName);
+        RC createDataForIndex_table(int table_id, std::string attributeName, std::string index_filename, void* &data);
+        RC deleteAllCorrespondingIndexFiles(const std::string &tableName, int table_id);
+        RC insert_in_all_index_trees(const std::string &tableName, void *data, const RID &rid, std::vector<Attribute> recordDescriptor);
+        RC delete_in_all_index_trees(const std::string &tableName, void *data, const RID &rid, std::vector<Attribute> recordDescriptor);
     protected:
         RelationManager();                                                  // Prevent construction
         ~RelationManager();                                                 // Prevent unwanted destruction

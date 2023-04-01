@@ -4,6 +4,9 @@
 #include <map>
 #include <cstring>
 #include <climits>
+#include "glog/logging.h"
+#include "test/utils/json.hpp"
+#include <sstream>
 
 namespace PeterDB {
     IndexManager &IndexManager::instance() {
@@ -43,7 +46,7 @@ namespace PeterDB {
 
     RC IndexManager::openFile(const std::string &fileName, IXFileHandle &ixFileHandle) {
 
-        if(ixFileHandle.getHandle() != nullptr) return -1;
+        if(&ixFileHandle != nullptr && ixFileHandle.getHandle() != nullptr) return -1;
         PagedFileManager& pagedFileManager = PagedFileManager::instance();
         FileHandle *indexFileHandle = new FileHandle;
         if(pagedFileManager.openFile(fileName, *indexFileHandle)) return -1;
@@ -1625,6 +1628,14 @@ namespace PeterDB {
     }
 
     RC IX_ScanIterator::getNextEntry(RID &rid, void *key) {
+//        IndexManager& ix = IndexManager::instance();
+//        std::stringstream stream;
+//        ix.printBTree(*this->ixFileHandle, attribute, stream);
+//        nlohmann::ordered_json j;
+//        stream >> j;
+//        LOG(INFO) << j.dump(2);
+//        return 0;
+
         bool is_internal = is_internal_node(this->page);
         if(is_internal){
             while(is_internal_node(this->page)){
