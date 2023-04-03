@@ -10,26 +10,26 @@
 
 ### 2. Meta-data page in an index file
 - Show your meta-data page of an index design if you have any.
-  ![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-3-extra-feature/report/metadata_page.png?raw=true)
+  ![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-3-extra-feature/report/metadata_page.png?raw=true)
 
 ### 3. Index Entry Format
 - Show your index entry design (structure).
 
   - entries on internal nodes:  
-    ![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-3-extra-feature/report/index_entry.png?raw=true)
+    ![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-3-extra-feature/report/index_entry.png?raw=true)
 
   - entries on leaf nodes:
 
-  ![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-3-extra-feature/report/leaf_entry.png?raw=true)
+  ![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-3-extra-feature/report/leaf_entry.png?raw=true)
 
 ### 4. Page Format
 - Show your internal-page (non-leaf node) design.
 
-![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-3-extra-feature/report/internal_node_page.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-3-extra-feature/report/internal_node_page.png?raw=true)
 
 - Show your leaf-page (leaf node) design.
 
-![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-3-extra-feature/report/leaf_node_page.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-3-extra-feature/report/leaf_node_page.png?raw=true)
 
 ### 5. Describe the following operation logic.
 - Split
