@@ -37,15 +37,15 @@
 Same for records other than internal record and tombstone pointers.
 
 #### Regular record:
-![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-1/report/record%20format.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/record%20format.png?raw=true)
 
 #### Internal record:
 
-![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-2/report/internal%20record.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/internal%20record.png?raw=true)
 
 #### Tombstone pointer:
 
-![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-2/report/tombstone%20pointer.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/tombstone%20pointer.png?raw=true)
 
 - Describe how you store a null field.
 
@@ -70,7 +70,7 @@ Not changed
 
 - Explain your slot directory design if applicable.
 
-![alt text](https://github.com/UCI-Chenli-teaching/cs222-winter23-MiraKabra/blob/assignment-1/report/Page%20format.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/Page%20format.png?raw=true)
 
 
 In the slot directory, after delete record, that corresponding slot's length and start address fields both gets assigned value -1. And if a new record is getting inserted in that page, it will populate that hole.
