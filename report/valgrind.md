@@ -15,13 +15,13 @@ For example, using breakpoints, step in/step out/step over, evaluate expressions
 
 I used clion debugger. Screenshots are attached below:
 
-![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-1/report/debugger/debug_file1.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/debugger/debug_file1.png?raw=true)
 
-![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-1/report/debugger/debug_file2.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/debugger/debug_file2.png?raw=true)
 
-![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-1/report/debugger/debug_file3.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/debugger/debug_file3.png?raw=true)
 
-![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-1/report/debugger/debug_file4.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/debugger/debug_file4.png?raw=true)
 
 
 ### 3. Using Valgrind
@@ -59,10 +59,10 @@ ERROR SUMMARY: 0 errors from 0 contexts (suppressed: 0 from 0)
 
 There was one error coming from the rbfm_test_utils.h file because an object created by new was getting deleted by free, which was a mismatch. I changed it to malloc.
 
-![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-1/report/valgrind/pfm.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/valgrind/pfm.png?raw=true)
 
-![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-1/report/valgrind/pfm2.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/valgrind/pfm2.png?raw=true)
 
-![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-1/report/valgrind/rbfm.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/valgrind/rbfm.png?raw=true)
 
-![alt text](https://github.com/MiraKabra/Database-Systems/blob/assignment-1/report/valgrind/rbfm2.png?raw=true)
+![alt text](https://github.com/MiraKabra/Database-Systems/blob/main/report/valgrind/rbfm2.png?raw=true)
